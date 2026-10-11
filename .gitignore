@@ -1,0 +1,31 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+oauth_client_info.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+wheels/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

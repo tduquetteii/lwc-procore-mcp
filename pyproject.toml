@@ -1,0 +1,15 @@
+[project]
+name = "lwc-procore-mcp"
+version = "0.1.0"
+description = "Remote MCP server that gives LLM assistants per-user OAuth access to Procore"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.15"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.3.0",
+    "pydantic>=2.14.0",
+    "python-dotenv>=1.2.4",
+    "starlette>=1.7.0",
+]
