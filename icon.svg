@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 213.26 213.26" width="300" height="300" role="img" aria-label="PLD mark: a smaller cube breaking out through the front corner of a larger cube">
+<title>PLD</title>
+<g transform="translate(93.36,124.05)" stroke-linejoin="round" stroke-linecap="round" stroke-width="1.5">
+<g stroke="#000000">
+<polygon points="0.00,-110.05 -70.53,-71.34 26.55,-43.21 97.08,-81.92" fill="#9E9E9E"/>
+<polygon points="-70.53,-71.34 26.55,-43.21 26.55,66.84 -70.53,38.71" fill="#636363"/>
+<polygon points="97.08,-81.92 26.55,-43.21 26.55,66.84 97.08,28.13" fill="#000000"/>
+<polygon points="0.00,-110.05 -70.53,-71.34 -70.53,38.71 26.55,66.84 97.08,28.13 97.08,-81.92" fill="none"/>
+</g>
+<g stroke="#000000">
+<polygon points="-28.01,-21.51 39.95,-1.82 89.32,-28.92 61.81,-36.89 26.55,-17.53 -13.90,-29.25" fill="#9E9E9E"/>
+<polygon points="-28.01,-21.51 39.95,-1.82 39.95,75.21 -28.01,55.52" fill="#636363"/>
+<polygon points="39.95,-1.82 89.32,-28.92 89.32,48.11 39.95,75.21" fill="#000000"/>
+<polygon points="-13.90,-29.25 -28.01,-21.51 -28.01,55.52 39.95,75.21 89.32,48.11 89.32,-28.92 61.81,-36.89 26.55,-17.53" fill="none"/>
+</g>
+</g></svg>

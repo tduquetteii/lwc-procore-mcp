@@ -47,6 +47,9 @@ rotates the refresh token on every use.
 |---|---|---|
 | `list_projects` | `active_only` (bool, default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
 
+Every tool carries a `title` and a read-only or destructive annotation. MCP clients use these to
+group tools in their permission settings and to decide which tools may run without asking first.
+
 More tools are added by writing an `async` function decorated with `@mcp.tool()` in `main.py` and
 calling `procore_get(path, params)`; see [Adding tools](#adding-tools).
 
@@ -134,7 +137,7 @@ Try it: *"List my active Procore projects."*
 ## Adding tools
 
 ```python
-@mcp.tool()
+@mcp.tool(title='List RFIs', annotations=ToolAnnotations(read_only_hint=True))
 async def list_rfis(project_id: int) -> list[dict]:
     """List RFIs for a project. Use list_projects to find the project_id."""
     rfis = await procore_get(f'/rest/v1.0/projects/{project_id}/rfis')
@@ -144,6 +147,10 @@ async def list_rfis(project_id: int) -> list[dict]:
 
 Guidelines that keep the tools useful to the model:
 
+- Give every tool a `title` and one annotation: `read_only_hint=True` for tools that only read,
+  `destructive_hint=True` for tools that create, update, or delete. Clients group tools by these
+  hints in their permission settings; a tool with neither lands in a catch-all group and is
+  usually asked about on every call.
 - Write the docstring for the model, not for humans. Say what the tool returns and which other tool
   supplies its inputs.
 - Trim Procore's large payloads to the fields the model needs. Everything you return goes into the
@@ -175,6 +182,7 @@ Guidelines that keep the tools useful to the model:
 
 ```
 main.py          server: OAuth proxy routes, token verifier, Procore client, tools
+icon.svg         server icon sent in the MCP handshake, for clients that show one
 Dockerfile       uv-based image; runs uvicorn on port 8000
 pyproject.toml   dependencies (locked in uv.lock)
 .env.example     the four environment variables

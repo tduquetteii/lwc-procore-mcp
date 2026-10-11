@@ -15,7 +15,7 @@ RUN uv python install 3.15
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project --no-dev
 
-COPY main.py ./
+COPY main.py icon.svg ./
 
 EXPOSE 8000
 

@@ -6,16 +6,19 @@ Procore MCP server with per-user OAuth.
     /mcp        every request carries the user's Procore token, checked against Procore's /me endpoint
 """
 
+import base64
 import httpx
 import os
 import time
 from dotenv import load_dotenv
+from pathlib import Path
 from urllib.parse import urlencode
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Icon, ToolAnnotations
 from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
@@ -31,6 +34,7 @@ COMPANY_ID      = os.environ['PROCORE_COMPANY_ID']
 PROCORE_API     = 'https://api.procore.com'
 PROCORE_LOGIN   = 'https://login.procore.com'
 ISSUER          = f'{PUBLIC_URL}/'
+REPO_URL        = 'https://github.com/tduquetteii/lwc-procore-mcp'
 
 
 # ------------- AUTH -------------
@@ -55,8 +59,19 @@ class ProcoreTokenVerifier(TokenVerifier):
         return access
 
 
+# Advertised in the MCP handshake (serverInfo.icons) for clients that render server icons.
+# The mark is black and grey, so it is declared for light backgrounds.
+ICON = Icon(
+    src='data:image/svg+xml;base64,' + base64.b64encode(Path(__file__).with_name('icon.svg').read_bytes()).decode(),
+    mime_type='image/svg+xml',
+    sizes=['any'],
+    theme='light',
+)
+
 mcp = MCPServer(
     "lwc-procore-mcp",
+    website_url=REPO_URL,
+    icons=[ICON],
     token_verifier=ProcoreTokenVerifier(),
     auth=AuthSettings(
         issuer_url=AnyHttpUrl(ISSUER),
@@ -115,7 +130,7 @@ async def procore_get(path: str, params: dict | None = None) -> dict | list:
 
         return response.json()
 
-@mcp.tool()
+@mcp.tool(title='List projects', annotations=ToolAnnotations(read_only_hint=True))
 async def list_projects(active_only: bool = True) -> list[dict]:
     """
     List Procore projects the current user can see. Returns id, name, number, and location.
