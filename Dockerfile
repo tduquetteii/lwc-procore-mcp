@@ -16,6 +16,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project --no-dev
 
 COPY main.py icon.svg ./
+COPY procore_mcp ./procore_mcp
 
 EXPOSE 8000
 

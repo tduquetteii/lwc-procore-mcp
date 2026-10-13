@@ -45,13 +45,22 @@ rotates the refresh token on every use.
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `list_projects` | `active_only` (bool, default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
+| `get_me` | none | `id`, `name`, `login` of the signed-in Procore user. |
+| `list_projects` | `active_only` (default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
+| `list_rfis` | `project_id`; optional `status` (default `open`), `ball_in_court_id`, `overdue`, `search`, `limit` | Number, subject, status, due date, ball in court, assignees, responsible contractor, RFI manager, cost and schedule impact, priority, link. |
+| `list_submittals` | `project_id`; optional `status` (default `Open`), `ball_in_court_id`, `responsible_contractor_id`, `search`, `current_revision_only`, `limit` | Number, title, revision, status and its group, due dates, ball in court, responsible contractor, submittal manager, spec section, type. `status` is a group (`Open`, `Closed`, `Draft`) or a status name configured for the company. |
+| `list_punch_items` | `project_id`; optional `status` (default `open`), `priority`, `trade_id`, `vendor_id`, `search`, `limit` | Number, name, status, workflow status, priority, due date, location, trade, assignees, ball in court, manager, final approver, type, description. |
+| `get_daily_log` | `project_id`, `start_date`, `end_date` (both required, `YYYY-MM-DD`, at most 31 days) | Manpower by company with workers and man-hours plus totals for the range, notes, and weather. Both dates are required so the model asks which days to pull instead of assuming today. |
+
+List tools return `{"total", "returned", "items"}`: `total` is Procore's count for the filter and
+`items` holds at most `limit` rows (default 100). Procore errors, such as a 403 when the user lacks a
+tool on a project, reach the model with Procore's status and message.
 
 Every tool carries a `title` and a read-only or destructive annotation. MCP clients use these to
 group tools in their permission settings and to decide which tools may run without asking first.
 
-More tools are added by writing an `async` function decorated with `@mcp.tool()` in `main.py` and
-calling `procore_get(path, params)`; see [Adding tools](#adding-tools).
+More tools are added as modules under `procore_mcp/tools/`, one per Procore resource; see
+[Adding tools](#adding-tools).
 
 ## Prerequisites
 
@@ -63,6 +72,8 @@ calling `procore_get(path, params)`; see [Adding tools](#adding-tools).
 - Your Procore **company ID**. The quickest way to find it is `GET https://api.procore.com/rest/v1.0/companies`
   with any valid token, or look at the URL of a company-level tool in Procore.
 - [uv](https://docs.astral.sh/uv/) and Python 3.15+ for local development.
+- [Node.js](https://nodejs.org) if you want to test with the MCP Inspector; see
+  [Test before deploying](#test-before-deploying).
 - An MCP client that supports remote servers over streamable HTTP with OAuth and lets you supply
   your own OAuth client ID (see [Connect a client](#connect-a-client)).
 
@@ -90,10 +101,77 @@ curl http://localhost:8000/health
 curl http://localhost:8000/.well-known/oauth-authorization-server
 ```
 
+## Test before deploying
+
+Three layers, cheapest first. The first needs nothing, the second needs a Procore login, the
+third needs a public URL.
+
+### 1. Offline checks
+
+`uv run smoke.py` checks the server without starting it or signing in: the OAuth routes, the
+401 on `/mcp`, every tool's title and annotation, the icon in the handshake, and every tool
+against a fake Procore that answers from fixtures: request paths and parameters, pagination,
+filtering, trimming, and how Procore errors reach the model. It takes a couple of seconds, so
+run it after every change. It proves the server and the tool code are wired correctly. It cannot
+prove what Procore returns, because Procore itself is faked.
+
+### 2. Real calls with the MCP Inspector
+
+The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) is the protocol's
+official debugging client: a web UI with no model behind it that shows every request and
+response. Use it to sign in to Procore through this server and call tools with real data.
+
+Once, add the Inspector's callback URL as a redirect URI on the Procore app: Developer Portal,
+Manage App, OAuth Credentials, on the credential set (sandbox or production) whose Client ID you
+will use. Inspector 2.x opens at `http://127.0.0.1:6274`, so the callback is
+`http://127.0.0.1:6274/oauth/callback`. The OAuth settings show the exact value; it follows the
+host the Inspector is opened from, and `HOST=localhost` before the `npx` command below turns it into
+`http://localhost:6274/oauth/callback`. Procore matches the URI exactly, port and path included, so
+the `http://localhost` entry it registers by default does not cover it.
+
+Then, in one terminal, start the server with `PUBLIC_URL` pointed at itself. The discovery
+document is built from that value, and the Inspector follows whatever host it names for the
+authorize and token steps. A variable set in the shell wins over the one in `.env`:
+
+```bash
+PUBLIC_URL=http://localhost:8000 uv run uvicorn main:app --reload --port 8000
+```
+
+In PowerShell, run `$env:PUBLIC_URL = 'http://localhost:8000'` on its own line first.
+
+In a second terminal:
+
+```bash
+npx @modelcontextprotocol/inspector
+```
+
+It prints a URL on port 6274 with a session token and opens it in your browser. In
+the UI (Inspector 2.x):
+
+1. Add server. Server ID is any name, such as `lwc-procore-mcp`; it is only the key the Inspector
+   files the entry under. Transport `streamable-http`, URL `http://localhost:8000/mcp`.
+2. In the server's OAuth settings, set Client ID to the Procore Client ID. Leave the secret and
+   scopes empty. Without a client ID the Inspector attempts dynamic registration, which this
+   server does not offer.
+3. Connect. The Inspector reads the discovery documents, sends your browser to Procore's login
+   page, and comes back connected after you sign in. A Procore error about the redirect URI means
+   the callback above is missing from the credential set that owns the Client ID.
+
+**List Tools** then shows each tool with its title and annotation, running `list_projects`
+returns real rows, and the initialize entry in the history pane shows the server name, website
+URL, and icon exactly as a client receives them.
+
+Against a deployed server, skip the `PUBLIC_URL` override and give the Inspector the public
+`/mcp` URL. The loopback callback still works because the redirects happen in your browser.
+
+### 3. Your MCP client
+
 Hosted clients run the OAuth flow from their own servers, so to test the full flow end to end you
 need a public HTTPS URL. A tunnel such as `ngrok http 8000` or `cloudflared tunnel` works; set
 `PUBLIC_URL` to the tunnel URL and make sure the client's callback URL is registered on the Procore
-app.
+app. After adding or changing a tool, remove and re-add the server in the client so it refreshes
+the tool list, then confirm the tool sits under the expected permission group before sending a
+prompt.
 
 ## Deploy
 
@@ -137,26 +215,38 @@ Try it: *"List my active Procore projects."*
 ## Adding tools
 
 ```python
-@mcp.tool(title='List RFIs', annotations=ToolAnnotations(read_only_hint=True))
-async def list_rfis(project_id: int) -> list[dict]:
-    """List RFIs for a project. Use list_projects to find the project_id."""
-    rfis = await procore_get(f'/rest/v1.0/projects/{project_id}/rfis')
-    keep = ('id', 'number', 'subject', 'status', 'due_date')
-    return [{k: r.get(k) for k in keep} for r in rfis]
+# procore_mcp/tools/rfis.py
+from .. import procore, shape
+from ..server import READ_ONLY, mcp
+
+
+@mcp.tool(title='List RFIs', annotations=READ_ONLY)
+async def list_rfis(project_id: int, limit: int = 100) -> dict:
+    """List RFIs on a project. Use list_projects to find the project_id."""
+    rows, total = await procore.get_all(f'/rest/v1.0/projects/{project_id}/rfis', limit=limit)
+    return shape.listing([shape.pick(r, 'id', 'number', 'subject', 'status', 'due_date') for r in rows], total)
 ```
 
-Guidelines that keep the tools useful to the model:
+Each Procore resource gets one module under `procore_mcp/tools/` holding every tool for that
+resource, reads now and writes later. Add a new module to the import line in
+`procore_mcp/tools/__init__.py`; that import is what registers its tools. Guidelines that keep the
+tools useful to the model:
 
-- Give every tool a `title` and one annotation: `read_only_hint=True` for tools that only read,
-  `destructive_hint=True` for tools that create, update, or delete. Clients group tools by these
-  hints in their permission settings; a tool with neither lands in a catch-all group and is
-  usually asked about on every call.
-- Write the docstring for the model, not for humans. Say what the tool returns and which other tool
-  supplies its inputs.
-- Trim Procore's large payloads to the fields the model needs. Everything you return goes into the
-  model's context.
-- `procore_get` already attaches the user's token and the company header. Procore list endpoints
-  are paginated (`page`, `per_page`), so add paging for endpoints that can return many rows.
+- Give every tool a `title` and one annotation: `READ_ONLY` for tools that only read, `DESTRUCTIVE`
+  for tools that create, update, or delete (both defined in `procore_mcp/server.py`). Clients group
+  tools by these hints in their permission settings; a tool with neither lands in a catch-all group
+  and is usually asked about on every call. `uv run smoke.py` fails on a tool missing either; see
+  [Test before deploying](#test-before-deploying).
+- Write the docstring for the model, not for humans. Say what the tool returns, which other tool
+  supplies its inputs, and anything the model should ask the user for first.
+- Trim Procore's large payloads to the fields the model needs; `shape.pick`, `shape.name`, and
+  `shape.names` flatten records and nested people or vendors to names. Everything you return goes
+  into the model's context.
+- Use `procore.get` for one record and `procore.get_all` for lists. `get_all` walks `page` and
+  `per_page` up to `limit` rows and returns them with Procore's `Total`, which `shape.listing` turns
+  into the `{"total", "returned", "items"}` envelope. Both attach the user's token and the company
+  header, and both raise `ToolError` carrying Procore's status and message so the model sees why a
+  call failed. Raise `ToolError` yourself for arguments you reject.
 
 ## Security notes
 
@@ -181,8 +271,17 @@ Guidelines that keep the tools useful to the model:
 ## Project layout
 
 ```
-main.py          server: OAuth proxy routes, token verifier, Procore client, tools
+main.py          entrypoint: imports the package and builds the ASGI app (uvicorn main:app)
+procore_mcp/
+  config.py      environment variables and constants
+  auth.py        token verifier: a token is valid if Procore accepts it
+  server.py      the MCPServer instance, its icon, and the READ_ONLY / DESTRUCTIVE annotations
+  routes.py      OAuth discovery and proxy routes, /health
+  procore.py     Procore HTTP client: auth headers, pagination, error surfacing
+  shape.py       helpers that trim Procore records to the fields the model needs
+  tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log
 icon.svg         server icon sent in the MCP handshake, for clients that show one
+smoke.py         offline checks: routes, auth gate, tool metadata, every tool against a fake Procore
 Dockerfile       uv-based image; runs uvicorn on port 8000
 pyproject.toml   dependencies (locked in uv.lock)
 .env.example     the four environment variables
@@ -194,7 +293,9 @@ pyproject.toml   dependencies (locked in uv.lock)
 - **The client keeps asking to re-authenticate right after connecting**: `PUBLIC_URL` does not match
   the URL the client was given, so the discovery document points somewhere else.
 - **Procore login page shows a redirect-URI error**: the client's callback URL is not registered on
-  the Procore app, or you are using sandbox credentials against production.
+  the Procore app, on the credential set that owns the Client ID. Procore matches the whole URI,
+  host, port, and path included; the Inspector shows its own in the OAuth settings,
+  `http://127.0.0.1:6274/oauth/callback` by default.
 - **401 on every `/mcp` call**: check the server logs for the result of the `/rest/v1.0/me` check;
   a token from a different Procore environment (sandbox vs production) is rejected.
 
