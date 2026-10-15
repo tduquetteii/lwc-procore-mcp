@@ -30,8 +30,10 @@ async def oauth_metadata(request: Request) -> JSONResponse:
 
 
 @mcp.custom_route('/authorize', methods=['GET'])
-async def authorize(request: Request) -> RedirectResponse:
+async def authorize(request: Request) -> Response:
     query = request.query_params
+    if not query.get('redirect_uri'): 
+        return JSONResponse({'error': 'invalid_request', 'error_description': 'redirect_uri is required'}, status_code=400)
     params = {
         'response_type': 'code',
         'client_id': CLIENT_ID,

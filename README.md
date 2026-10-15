@@ -27,9 +27,18 @@ So this server sits between the client and Procore:
 | `GET /health` | Returns `ok`. Used by your hosting platform for a health check. |
 
 Bearer tokens are verified by calling Procore's `GET /rest/v1.0/me`. A token that Procore accepts is
-cached in memory for five minutes so each tool call does not cost an extra round trip. Tools then
-call the Procore REST API with that same token plus the `Procore-Company-Id` header, so a user only
-ever sees what they could see in Procore itself.
+cached in memory for ten minutes so each tool call does not cost an extra round trip, and concurrent
+requests for an unverified token share one check. Only a 401 or 403 from Procore marks a token bad.
+A rate limit, outage, or timeout keeps serving the cached identity, for up to an hour after Procore
+last confirmed it, or answers 503 with `Retry-After` when nothing is cached, so a busy minute never
+looks like a revoked token to the client. Tools then call the Procore REST API with that same token
+plus the `Procore-Company-Id` header, so a user only ever sees what they could see in Procore itself.
+
+Procore enforces an hourly request limit and a 10-second spike limit, and failed requests count too.
+At most four Procore requests are in flight per process, so parallel callers queue instead of
+bursting. When Procore reports the limit spent, or answers 429 or 503, the server waits out the reset
+when it is within ten seconds and retries once. A longer wait is returned to the model as an error
+naming the cause and the seconds, without sending a request that would fail.
 
 ```
 Client  --(1) discovery-->  this server  (metadata, /authorize, /token)
@@ -190,8 +199,9 @@ Checklist for whichever host you use:
   no trailing slash, because the OAuth metadata is built from it.
 - The container trusts `X-Forwarded-Proto` from the proxy (`--proxy-headers` in the Dockerfile), so
   redirects stay on `https`.
-- Run a single instance. MCP sessions live in process memory, so a second replica behind a load
-  balancer would not see sessions started on the first.
+- Replicas are safe: the MCP transport runs stateless, so no session lives in process memory.
+  Each instance keeps its own token cache and rate-limit pacing, though, so two replicas can put
+  twice the burst on Procore.
 - Store the Procore credentials as secret environment variables, never in the image or the repo.
 
 ## Connect a client
@@ -274,11 +284,12 @@ tools useful to the model:
 main.py          entrypoint: imports the package and builds the ASGI app (uvicorn main:app)
 procore_mcp/
   config.py      environment variables and constants
-  auth.py        token verifier: a token is valid if Procore accepts it
+  auth.py        token verifier (cached, outage-tolerant) and the 503 outage middleware
   server.py      the MCPServer instance, its icon, and the READ_ONLY / DESTRUCTIVE annotations
   routes.py      OAuth discovery and proxy routes, /health
-  procore.py     Procore HTTP client: auth headers, pagination, error surfacing
+  procore.py     Procore HTTP client: auth headers, pagination, rate limiting, error surfacing
   shape.py       helpers that trim Procore records to the fields the model needs
+  cache.py       in-memory cache with a lifetime per entry: identities, project lists, submittal statuses
   tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log
 icon.svg         server icon sent in the MCP handshake, for clients that show one
 smoke.py         offline checks: routes, auth gate, tool metadata, every tool against a fake Procore
@@ -296,6 +307,12 @@ pyproject.toml   dependencies (locked in uv.lock)
   the Procore app, on the credential set that owns the Client ID. Procore matches the whole URI,
   host, port, and path included; the Inspector shows its own in the OAuth settings,
   `http://127.0.0.1:6274/oauth/callback` by default.
+- **Tool errors saying `Procore rate limit reached; wait Ns`**: a burst of parallel calls hit
+  Procore's spike or hourly limit. The server paces and retries on its own; ask for fewer things at
+  once or wait the named seconds. The connection stays up.
+- **Tool errors saying `Procore unavailable (503); wait Ns`**: Procore itself answered 503, usually
+  maintenance. Nothing on this side to fix; the server holds calls for the time Procore named, then
+  tries again.
 - **401 on every `/mcp` call**: check the server logs for the result of the `/rest/v1.0/me` check;
   a token from a different Procore environment (sandbox vs production) is rejected.
 

@@ -20,11 +20,13 @@ ICON = Icon(
 READ_ONLY   = ToolAnnotations(read_only_hint=True)
 DESTRUCTIVE = ToolAnnotations(destructive_hint=True)
 
+verifier = ProcoreTokenVerifier()
+
 mcp = MCPServer(
     'lwc-procore-mcp',
     website_url=REPO_URL,
     icons=[ICON],
-    token_verifier=ProcoreTokenVerifier(),
+    token_verifier=verifier,
     auth=AuthSettings(
         issuer_url=AnyHttpUrl(ISSUER),
         resource_server_url=AnyHttpUrl(f'{PUBLIC_URL}/mcp'),

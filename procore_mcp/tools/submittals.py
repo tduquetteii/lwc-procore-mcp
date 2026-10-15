@@ -1,15 +1,15 @@
 """Submittals."""
 
-import time
-
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .. import procore, shape
+from ..cache import TTLCache
 from ..config import COMPANY_ID
 from ..server import READ_ONLY, mcp
 
-GROUPS = ('Open', 'Closed', 'Draft')
-_statuses: tuple[float, list[dict]] = (0.0, [])
+GROUPS     = ('Open', 'Closed', 'Draft')
+STATUS_TTL = 3600  # seconds; statuses change about never, and each lookup is a Procore request
+_statuses: TTLCache[str, list[dict]] = TTLCache()
 
 
 async def statuses() -> list[dict]:
@@ -18,12 +18,11 @@ async def statuses() -> list[dict]:
 
     Procore identifies them by company-specific ids, so they are fetched once an hour and cached.
     """
-    global _statuses
-    if _statuses[0] < time.time():
+    if (rows := _statuses.get(COMPANY_ID)) is None:
         rows, _ = await procore.get_all(f'/rest/v1.0/companies/{COMPANY_ID}/submittal_statuses', limit=200)
-        _statuses = (time.time() + 3600, rows)
+        _statuses.set(COMPANY_ID, rows, STATUS_TTL)
 
-    return _statuses[1]
+    return rows
 
 
 async def status_ids(status: str) -> list[int]:
