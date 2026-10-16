@@ -7,7 +7,7 @@ from ..server import READ_ONLY, mcp
 
 PAGE      = 300  # Procore's cap for this endpoint; one request covers most companies
 CACHE_TTL = 60   # seconds; parallel agents each ask for the project list first
-KEYS      = ('id', 'name', 'project_number', 'active', 'city', 'state_code')
+KEYS      = ('id', 'name', 'project_number', 'active', 'city', 'state_code', 'start_date', 'completion_date')
 _cache: TTLCache[tuple[str | None, bool], tuple[list[dict], int | None]] = TTLCache(limit=500)  # (user, active_only) -> (items, total)
 
 
@@ -18,7 +18,7 @@ async def projects(active_only: bool) -> tuple[list[dict], int | None]:
         return hit
     params = {'company_id': COMPANY_ID, 'filters[by_status]': 'Active' if active_only else 'All'}
     rows, total = await procore.get_all('/rest/v1.0/projects', params, limit=procore.MAX_ROWS, per_page=PAGE)
-    listing = [shape.pick(p, *KEYS) for p in rows], total
+    listing = [shape.pick(p, *KEYS) | {'stage': shape.name(p.get('project_stage')) or p.get('stage')} for p in rows], total
     _cache.set(key, listing, CACHE_TTL)
 
     return listing
@@ -27,9 +27,11 @@ async def projects(active_only: bool) -> tuple[list[dict], int | None]:
 @mcp.tool(title='List projects', annotations=READ_ONLY)
 async def list_projects(active_only: bool = True) -> dict:
     """
-    List Procore projects the current user can see: id, name, number, and location.
+    List Procore projects the current user can see: id, name, project_number, active, city,
+    state_code, start_date, completion_date, stage.
 
-    Use the returned id wherever another tool asks for a project_id.
+    Use the returned id wherever another tool asks for a project_id. active_only=False adds
+    finished projects; completion_date and stage say how recent each one is.
     """
     items, total = await projects(active_only)
 

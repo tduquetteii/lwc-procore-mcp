@@ -55,7 +55,10 @@ rotates the refresh token on every use.
 | Tool | Arguments | Returns |
 |---|---|---|
 | `get_me` | none | `id`, `name`, `login` of the signed-in Procore user. |
-| `list_projects` | `active_only` (default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
+| `list_projects` | `active_only` (default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code`, `start_date`, `completion_date`, `stage` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
+| `list_project_vendors` | `project_id`; optional `search`, `trade`, `limit` | The companies in a project's directory: id, name, trades, cost codes, vendor group, active, prequalified, city and state, phone, email, primary contact. Procore leaves trades, cost codes, and vendor group off this project-level copy; the company directory has them. `trade` keeps companies whose trade or cost code names contain the text. |
+| `list_company_vendors` | optional `search`, `trade`, `limit` | The same fields for the company-wide directory: the whole pool of subcontractors and suppliers, on a project or not. Well over a thousand companies, so filter or raise `limit` deliberately. |
+| `list_commitments` | `project_ids` (up to 25 per call); optional `kind` (`subcontract` or `purchase_order`), `status`, `limit` (per project) | Subcontracts and purchase orders across those projects, merged and sorted by vendor then project: project id, type, number, title, status, executed, vendor and vendor id, totals and change orders, contract and completion dates, percent paid, remaining balance. Who is actually under contract, as opposed to who was added to the directory. Projects the user cannot read are listed under `errors` while the rest return. For a company-wide view the model takes the ids from `list_projects`, calls this in batches, and builds the report itself. |
 | `list_rfis` | `project_id`; optional `status` (default `open`), `ball_in_court_id`, `overdue`, `search`, `limit` | Number, subject, status, due date, ball in court, assignees, responsible contractor, RFI manager, cost and schedule impact, priority, link. |
 | `list_submittals` | `project_id`; optional `status` (default `Open`), `ball_in_court_id`, `responsible_contractor_id`, `search`, `current_revision_only`, `limit` | Number, title, revision, status and its group, due dates, ball in court, responsible contractor, submittal manager, spec section, type. `status` is a group (`Open`, `Closed`, `Draft`) or a status name configured for the company. |
 | `list_punch_items` | `project_id`; optional `status` (default `open`), `priority`, `trade_id`, `vendor_id`, `search`, `limit` | Number, name, status, workflow status, priority, due date, location, trade, assignees, ball in court, manager, final approver, type, description. |
@@ -290,7 +293,7 @@ procore_mcp/
   procore.py     Procore HTTP client: auth headers, pagination, rate limiting, error surfacing
   shape.py       helpers that trim Procore records to the fields the model needs
   cache.py       in-memory cache with a lifetime per entry: identities, project lists, submittal statuses
-  tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log
+  tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log, vendors, commitments
 icon.svg         server icon sent in the MCP handshake, for clients that show one
 smoke.py         offline checks: routes, auth gate, tool metadata, every tool against a fake Procore
 Dockerfile       uv-based image; runs uvicorn on port 8000
@@ -315,6 +318,11 @@ pyproject.toml   dependencies (locked in uv.lock)
   tries again.
 - **401 on every `/mcp` call**: check the server logs for the result of the `/rest/v1.0/me` check;
   a token from a different Procore environment (sandbox vs production) is rejected.
+- **`list_commitments` lists a project under `errors` with a 403**: the user lacks the Commitments tool
+  on that project. The other projects in the call still return.
+- **A company's `trades` or `cost_codes` come back empty although its Company Directory record shows
+  them**: the API serves both for most companies, so the record is the odd one out; re-saving it in
+  Procore is the first thing to try.
 
 ## License
 

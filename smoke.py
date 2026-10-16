@@ -39,7 +39,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from procore_mcp import config, procore  # noqa: E402
 from procore_mcp.auth import ProcoreUnavailable  # noqa: E402
 from procore_mcp.server import verifier  # noqa: E402
-from procore_mcp.tools import daily_log, me, projects, punch_items, rfis, submittals  # noqa: E402
+from procore_mcp.tools import commitments, daily_log, me, projects, punch_items, rfis, submittals, vendors  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 failed: list[str] = []
@@ -57,9 +57,53 @@ PERSON = {'id': 9, 'login': 'pat@example.com', 'name': 'Pat Manager'}
 FIXTURES: dict[str, dict | list] = {
     '/rest/v1.0/me': PERSON | {'extra': 'dropped'},
     '/rest/v1.0/projects': [
-        {'id': 1, 'name': 'Active A', 'project_number': '100', 'active': True, 'city': 'Portland', 'state_code': 'ME', 'extra': 'dropped'},
-        {'id': 2, 'name': 'Inactive B', 'project_number': '200', 'active': False, 'city': 'Nashua', 'state_code': 'NH', 'extra': 'dropped'},
-        {'id': 3, 'name': 'Active C', 'project_number': '300', 'active': True, 'city': 'Boston', 'state_code': 'MA', 'extra': 'dropped'},
+        {'id': 1, 'name': 'Active A', 'project_number': '100', 'active': True, 'city': 'Portland', 'state_code': 'ME', 'start_date': '2026-03-01', 'completion_date': '2027-02-28',
+         'stage': 'Course of Construction', 'project_stage': {'id': 3, 'name': 'Course of Construction'}, 'extra': 'dropped'},
+        {'id': 2, 'name': 'Inactive B', 'project_number': '200', 'active': False, 'city': 'Nashua', 'state_code': 'NH', 'start_date': '2025-01-15', 'completion_date': '2025-12-20',
+         'stage': 'Complete', 'project_stage': None, 'extra': 'dropped'},
+        {'id': 3, 'name': 'Active C', 'project_number': '300', 'active': True, 'city': 'Boston', 'state_code': 'MA', 'start_date': '2026-06-01', 'completion_date': None,
+         'stage': None, 'project_stage': {'id': 2, 'name': 'Pre-Construction'}, 'extra': 'dropped'},
+        {'id': 4, 'name': 'Inactive D', 'project_number': '400', 'active': False, 'city': 'Salem', 'state_code': 'NH', 'start_date': '2024-01-15', 'completion_date': '2024-11-30',
+         'stage': 'Complete', 'project_stage': None, 'extra': 'dropped'},
+    ],
+    '/rest/v1.1/vendors': [
+        {'id': 5, 'name': 'Acme Electric', 'is_active': True, 'prequalified': True, 'city': 'Portland', 'state_code': 'ME', 'business_phone': '207-555-0100', 'email_address': 'bids@acme.example',
+         'trades': [{'id': 1, 'name': 'Electrical', 'active': True}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}, 'standard_cost_codes': [{'id': 1, 'full_code': '26-0500', 'name': 'Electrical'}],
+         'primary_contact': {'id': 70, 'first_name': 'Eve', 'last_name': 'Volt', 'email_address': 'eve@acme.example'}, 'extra': 'dropped'},
+        {'id': 6, 'name': 'Glass Co', 'is_active': True, 'prequalified': False, 'city': 'Boston', 'state_code': 'MA', 'business_phone': None, 'email_address': None,
+         'trades': [{'id': 2, 'name': 'Glazing'}, {'id': 3, 'name': 'Curtain Wall'}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}, 'primary_contact': {'id': 72, 'first_name': 'Gus', 'last_name': 'Pane'},
+         'standard_cost_codes': [{'id': 2, 'full_code': '08-8000', 'name': 'Glazing'}, {'id': 3, 'full_code': None, 'name': None}]},
+        {'id': 7, 'name': 'Idle Plumbing', 'is_active': True, 'prequalified': None, 'city': 'Nashua', 'state_code': 'NH', 'business_phone': '603-555-0101', 'email_address': None,
+         'trades': [{'id': 4, 'name': 'Plumbing'}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}, 'primary_contact': {'id': 71, 'first_name': 'Pipa', 'last_name': None}},
+        {'id': 8, 'name': 'Gone Roofing', 'is_active': False, 'prequalified': None, 'city': None, 'state_code': None, 'business_phone': None, 'email_address': None,
+         'trades': [{'id': 5, 'name': 'Roofing'}], 'vendor_group': None, 'primary_contact': None},
+        {'id': 9, 'name': 'Old Drywall', 'is_active': True, 'prequalified': None, 'city': 'Salem', 'state_code': 'NH', 'business_phone': None, 'email_address': None,
+         'trades': [{'id': 6, 'name': 'Drywall'}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}, 'primary_contact': None},
+    ],
+    '/rest/v1.1/projects/1/vendors': [
+        {'id': 5, 'name': 'Acme Electric', 'is_active': True, 'trades': [{'id': 1, 'name': 'Electrical'}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}, 'extra': 'dropped'},
+        {'id': 6, 'name': 'Glass Co', 'is_active': True, 'trades': [], 'vendor_group': None, 'primary_contact': None},  # the project copy carries none of the company record's classification
+        {'id': 8, 'name': 'Gone Roofing', 'is_active': False, 'trades': [{'id': 5, 'name': 'Roofing'}], 'vendor_group': None},
+    ],
+    '/rest/v1.1/projects/3/vendors': [
+        {'id': 5, 'name': 'Acme Electric', 'is_active': True, 'trades': [{'id': 1, 'name': 'Electrical'}], 'vendor_group': {'id': 1, 'name': 'Subcontractor'}},
+    ],
+    '/rest/v1.1/projects/2/vendors': [
+        {'id': 9, 'name': 'Old Drywall', 'is_active': True, 'trades': [], 'vendor_group': None},
+    ],
+    '/rest/v1.1/projects/4/vendors': [],
+    '/rest/v1.0/work_order_contracts': [  # served per project_id, see answer()
+        {'id': 81, 'project_id': 1, 'number': 'SC-001', 'title': 'Glazing', 'status': 'Approved', 'executed': True, 'vendor': {'id': 6, 'name': 'Glass Co'},
+         'grand_total': '125000.0', 'approved_change_orders': '2500.0', 'pending_change_orders': '0.0', 'contract_date': '2026-03-15', 'issued_on_date': '2026-03-16',
+         'contract_start_date': '2026-04-01', 'contract_estimated_completion_date': '2026-09-30', 'actual_completion_date': None, 'percentage_paid': '40.0',
+         'remaining_balance_outstanding': '75000.0', 'extra': 'dropped'},
+        {'id': 82, 'project_id': 1, 'number': 'SC-002', 'title': 'Electrical', 'status': 'Draft', 'executed': False, 'vendor': {'id': 5, 'name': 'Acme Electric'}, 'grand_total': '90000.0'},
+        {'id': 83, 'project_id': 3, 'number': 'SC-001', 'title': 'Storefront', 'status': 'Out For Signature', 'executed': False, 'vendor': {'id': 6, 'name': 'Glass Co'}, 'grand_total': '40000.0'},
+        {'id': 84, 'project_id': 3, 'number': 'SC-002', 'title': 'Flooring', 'status': 'Approved', 'executed': True, 'vendor': {'id': 11, 'name': 'Contract Only Flooring'}, 'grand_total': '30000.0'},
+    ],
+    '/rest/v1.0/purchase_order_contracts': [
+        {'id': 91, 'project_id': 1, 'number': 'PO-001', 'title': 'Lumber package', 'status': 'Received', 'executed': True, 'vendor': {'id': 12, 'company': 'Standale Lumber'},
+         'grand_total': '18000.0', 'delivery_date': '2026-05-01', 'extra': 'dropped'},
     ],
     '/rest/v1.0/projects/7/rfis': [
         {'id': 11, 'number': '4', 'full_number': 'RFI-004', 'subject': 'Door hardware', 'status': 'open', 'due_date': '2026-10-15',
@@ -125,7 +169,7 @@ def answer(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text='maintenance', headers={'Retry-After': '1'})
     if scenario.get('503_far'):
         return httpx.Response(503, text='maintenance', headers={'Retry-After': '120'})
-    if '/projects/403/' in path:
+    if '/projects/403/' in path or request.url.params.get('project_id') == '403':
         return httpx.Response(403, json={'errors': 'You do not have access to this tool'})
     body = FIXTURES.get(path)
     if body is None:
@@ -134,6 +178,8 @@ def answer(request: httpx.Request) -> httpx.Response:
         q = request.url.params
         if path == '/rest/v1.0/projects' and q.get('filters[by_status]', 'Active') == 'Active':
             body = [p for p in body if p['active']]  # Procore lists active projects unless asked for All
+        if path.endswith('_contracts'):
+            body = [c for c in body if str(c['project_id']) == q.get('project_id')]
         page, per_page = int(q.get('page', 1)), int(q.get('per_page', 100))
         return httpx.Response(200, json=body[(page - 1) * per_page:page * per_page], headers=limits | {'Total': str(len(body)), 'Per-Page': str(per_page)})
     return httpx.Response(200, json=body, headers=limits)
@@ -198,7 +244,7 @@ def wait_in(message: str) -> int:
 # ------------- TOOL METADATA -------------
 print('-- tools')
 tools = asyncio.run(main.mcp.list_tools())
-check('six tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_projects', 'list_punch_items', 'list_rfis', 'list_submittals'])
+check('nine tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_commitments', 'list_company_vendors', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_submittals'])
 for t in tools:
     a = t.annotations
     one_hint = a is not None and (a.read_only_hint is True) != (a.destructive_hint is True)
@@ -293,7 +339,8 @@ q = query(requests[0])
 check('asks Procore for active projects, 300 per page', requests[0].url.path == '/rest/v1.0/projects' and q['filters[by_status]'] == ['Active'] and q['per_page'] == ['300'] and q['company_id'] == [config.COMPANY_ID])
 check('active_only=True lists only active projects', [p['id'] for p in result['items']] == [1, 3])
 check('envelope reports total and returned', (result['total'], result['returned']) == (2, 2))
-check('rows trimmed to documented keys', all(set(p) == {'id', 'name', 'project_number', 'active', 'city', 'state_code'} for p in result['items']))
+check('rows trimmed to documented keys', all(set(p) == {'id', 'name', 'project_number', 'active', 'city', 'state_code', 'start_date', 'completion_date', 'stage'} for p in result['items']))
+check('stage prefers project_stage name, falls back to the stage string', [p['stage'] for p in result['items']] == ['Course of Construction', 'Pre-Construction'])
 run(projects.list_projects())
 check('project list cached per user for a minute: no request', len(requests) == 0)
 procore.get_access_token = lambda: SimpleNamespace(token='other-token', subject='9')
@@ -304,7 +351,57 @@ run(projects.list_projects())
 check('another user gets their own request', len(requests) == 1)
 procore.get_access_token = lambda: SimpleNamespace(token='smoke-token', subject='9')
 result = run(projects.list_projects(active_only=False))
-check('active_only=False asks for All and keeps inactive projects', query(requests[0])['filters[by_status]'] == ['All'] and [p['id'] for p in result['items']] == [1, 2, 3])
+check('active_only=False asks for All and keeps inactive projects', query(requests[0])['filters[by_status]'] == ['All'] and [p['id'] for p in result['items']] == [1, 2, 3, 4])
+check('inactive project keeps its completion_date and stage string', result['items'][1]['completion_date'] == '2025-12-20' and result['items'][1]['stage'] == 'Complete')
+
+
+# ------------- LIST_PROJECT_VENDORS / LIST_COMPANY_VENDORS -------------
+print('-- list_project_vendors')
+result = run(vendors.list_project_vendors(1, search='acme'))
+q = query(requests[0])
+check('GET /rest/v1.1/projects/{id}/vendors, extended view, search forwarded', requests[0].url.path == '/rest/v1.1/projects/1/vendors' and q['view'] == ['extended'] and q['filters[search]'] == ['acme'])
+check('only that endpoint is read', {r.url.path for r in requests} == {'/rest/v1.1/projects/1/vendors'})
+check('envelope reports Procore total', (result['total'], result['returned']) == (3, 3))
+row = result['items'][0]
+check('row trimmed to documented keys', set(row) == {'id', 'name', 'trades', 'cost_codes', 'vendor_group', 'active', 'prequalified', 'city', 'state_code', 'phone', 'email', 'primary_contact'})
+check('trades and vendor group flattened to names', row['trades'] == ['Electrical'] and row['vendor_group'] == 'Subcontractor')
+check('project copy returned as Procore sends it: empty trades stay empty', result['items'][1]['trades'] == [] and result['items'][1]['cost_codes'] == [] and result['items'][1]['vendor_group'] is None)
+check('null group and absent contact become None', result['items'][2]['vendor_group'] is None and result['items'][2]['primary_contact'] is None)
+result = run(vendors.list_project_vendors(1, trade='electric'))
+check('trade filter matches trade names case-insensitively, total counts the kept rows', [v['name'] for v in result['items']] == ['Acme Electric'] and result['total'] == 1)
+
+print('-- list_company_vendors')
+result = run(vendors.list_company_vendors(limit=10))
+q = query(requests[0])
+check('GET /rest/v1.1/vendors with company_id, extended view', requests[0].url.path == '/rest/v1.1/vendors' and q['company_id'] == [config.COMPANY_ID] and q['view'] == ['extended'] and 'filters[search]' not in q)
+check('walks every page of the directory', result['returned'] == 5 and len(requests) == 3)
+row = result['items'][0]
+check('contact flattened to a name, phone and email kept', row['primary_contact'] == 'Eve Volt' and row['phone'] == '207-555-0100' and row['email'] == 'bids@acme.example' and row['prequalified'] is True)
+check('cost codes rendered as code - name, empty ones dropped', row['cost_codes'] == ['26-0500 - Electrical'] and result['items'][1]['cost_codes'] == ['08-8000 - Glazing'] and result['items'][2]['cost_codes'] == [])
+check('contact with only a first name', result['items'][2]['primary_contact'] == 'Pipa')
+run(vendors.list_company_vendors(search='glass'))
+check('search forwarded', query(requests[0])['filters[search]'] == ['glass'])
+result = run(vendors.list_company_vendors(trade='08-80'))
+check('trade filter matches cost codes too', [v['name'] for v in result['items']] == ['Glass Co'])
+
+
+# ------------- LIST_COMMITMENTS -------------
+print('-- list_commitments')
+result = run(commitments.list_commitments([1]))
+check('reads both commitment endpoints with project_id and extended view', {r.url.path for r in requests} == {'/rest/v1.0/purchase_order_contracts', '/rest/v1.0/work_order_contracts'} and all(query(r)['project_id'] == ['1'] and query(r)['view'] == ['extended'] for r in requests))
+check('rows merged, sorted by vendor, total combined, no errors', [r['vendor'] for r in result['items']] == ['Acme Electric', 'Glass Co', 'Standale Lumber'] and result['total'] == 3 and result['errors'] == [])
+row = result['items'][1]
+check('subcontract row trimmed and typed', row['type'] == 'subcontract' and row['project_id'] == 1 and row['title'] == 'Glazing' and row['executed'] is True and row['grand_total'] == 125000.0 and row['percent_paid'] == 40.0 and row['estimated_completion_date'] == '2026-09-30' and 'extra' not in row)
+check('purchase order vendor read from company, delivery date kept', result['items'][2]['type'] == 'purchase_order' and result['items'][2]['vendor_id'] == 12 and result['items'][2]['delivery_date'] == '2026-05-01')
+check('draft contract has no amounts beyond its total', result['items'][0]['status'] == 'Draft' and result['items'][0]['grand_total'] == 90000.0 and result['items'][0]['percent_paid'] is None)
+result = run(commitments.list_commitments([1, 3, 403]))
+check('a batch reads every project', sorted(query(r)['project_id'][0] for r in requests if r.url.path.endswith('work_order_contracts') and query(r)['page'] == ['1']) == ['1', '3', '403'])
+check('items tagged with their project, sorted by vendor then project', [(r['vendor'], r['project_id']) for r in result['items']] == [('Acme Electric', 1), ('Contract Only Flooring', 3), ('Glass Co', 1), ('Glass Co', 3), ('Standale Lumber', 1)] and result['total'] == 5)
+check('a project the user cannot read is listed under errors, the others still return', [e['project_id'] for e in result['errors']] == [403] and '403' in result['errors'][0]['error'])
+run(commitments.list_commitments([1], kind='subcontract', status='Approved'))
+check('kind limits to one endpoint, status forwarded', {r.url.path for r in requests} == {'/rest/v1.0/work_order_contracts'} and query(requests[0])['filters[status]'] == ['Approved'])
+check('empty project_ids rejected', 'at least one' in error(commitments.list_commitments([])))
+check('too many project_ids rejected, naming the cap', 'at most 25' in error(commitments.list_commitments(list(range(26)))))
 
 
 # ------------- LIST_RFIS -------------
