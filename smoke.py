@@ -39,7 +39,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from procore_mcp import config, procore  # noqa: E402
 from procore_mcp.auth import ProcoreUnavailable  # noqa: E402
 from procore_mcp.server import verifier  # noqa: E402
-from procore_mcp.tools import commitments, daily_log, me, projects, punch_items, rfis, submittals, vendors  # noqa: E402
+from procore_mcp.tools import budget, change_events, change_orders, commitments, daily_log, me, prime_contracts, projects, punch_items, rfis, schedule, submittals, vendors  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 failed: list[str] = []
@@ -92,7 +92,7 @@ FIXTURES: dict[str, dict | list] = {
         {'id': 9, 'name': 'Old Drywall', 'is_active': True, 'trades': [], 'vendor_group': None},
     ],
     '/rest/v1.1/projects/4/vendors': [],
-    '/rest/v1.0/work_order_contracts': [  # served per project_id, see answer()
+    '/rest/v1.0/work_order_contracts': [  # rows carry project_id: the fake serves one project's rows at a time, see answer()
         {'id': 81, 'project_id': 1, 'number': 'SC-001', 'title': 'Glazing', 'status': 'Approved', 'executed': True, 'vendor': {'id': 6, 'name': 'Glass Co'},
          'grand_total': '125000.0', 'approved_change_orders': '2500.0', 'pending_change_orders': '0.0', 'contract_date': '2026-03-15', 'issued_on_date': '2026-03-16',
          'contract_start_date': '2026-04-01', 'contract_estimated_completion_date': '2026-09-30', 'actual_completion_date': None, 'percentage_paid': '40.0',
@@ -104,6 +104,56 @@ FIXTURES: dict[str, dict | list] = {
     '/rest/v1.0/purchase_order_contracts': [
         {'id': 91, 'project_id': 1, 'number': 'PO-001', 'title': 'Lumber package', 'status': 'Received', 'executed': True, 'vendor': {'id': 12, 'company': 'Standale Lumber'},
          'grand_total': '18000.0', 'delivery_date': '2026-05-01', 'extra': 'dropped'},
+    ],
+    '/rest/v1.1/change_events': [
+        {'id': 201, 'project_id': 1, 'number': '003', 'title': 'Rock in footing', 'scope': 'in_scope', 'created_at': '2026-05-02T14:00:00Z', 'updated_at': '2026-05-09T09:00:00Z',
+         'status': {'id': 3, 'name': 'Pending', 'mapped_to_status': 'open'}, 'change_type': {'id': 1, 'name': 'Owner Change', 'abbreviation': 'OC'},
+         'change_reason': {'id': 2, 'change_reason': 'Unforeseen Conditions'}, 'event_origin': {'origin_id': 11, 'origin_type': 'rfi', 'display_name': 'RFI-004', 'web_page_url': None},
+         'created_by': PERSON, 'change_items': [
+             {'id': 1, 'budget_code': {'id': 5, 'flat_code': '03-3000', 'description': 'Concrete'}, 'latest_cost_values': {'amount': '4500.0'}, 'latest_revenue_values': {'amount': '5200.0'},
+              'cost_impact': {'vendor': {'confirmed': {'id': 13, 'name': 'Rock Crushers'}, 'proposed': None}}},
+             {'id': 2, 'budget_code': {'id': 6, 'flat_code': '31-2000', 'description': 'Earthwork'}, 'latest_cost_values': {'amount': '1000.0'}, 'latest_revenue_values': {'amount': None},
+              'cost_impact': {'vendor': {'confirmed': None, 'proposed': {'id': 14, 'name': 'Dig Co'}}}},
+         ], 'extra': 'dropped'},
+        {'id': 202, 'project_id': 1, 'number': '001', 'title': 'Owner adds canopy', 'scope': 'tbd', 'status': {'id': 4, 'name': 'Void', 'mapped_to_status': 'void'},
+         'change_type': None, 'change_reason': None, 'event_origin': None, 'created_by': None, 'change_items': []},
+        {'id': 203, 'project_id': 3, 'number': '001', 'title': 'Flooring upgrade', 'scope': 'in_scope', 'status': {'id': 3, 'name': 'Pending', 'mapped_to_status': 'open'}, 'change_items': []},
+    ],
+    '/rest/v1.0/change_order_packages': [
+        {'id': 301, 'project_id': 1, 'number': '001', 'title': 'Canopy', 'status': 'approved', 'executed': True, 'revision': 0, 'contract_id': 71, 'contract': {'vendor': {'id': 20, 'name': 'Big Owner LLC'}},
+         'grand_total': '5200.0', 'due_date': '2026-06-01', 'reviewed_at': '2026-05-20T10:00:00Z', 'signed_change_order_received_date': '2026-05-22', 'invoiced_date': None, 'paid_date': None,
+         'created_at': '2026-05-10T10:00:00Z', 'updated_at': '2026-05-22T10:00:00Z', 'extra': 'dropped'},
+        {'id': 302, 'project_id': 1, 'number': '002', 'title': 'Rock excavation', 'status': 'pending', 'executed': False, 'contract_id': 81, 'contract': {'vendor': {'id': 6, 'name': 'Glass Co'}}, 'grand_total': '4500.0'},
+        {'id': 303, 'project_id': 3, 'number': '001', 'title': 'Flooring upgrade', 'status': 'approved', 'executed': True, 'contract_id': 84, 'contract': None, 'grand_total': '2000.0'},
+    ],
+    '/rest/v1.0/prime_contracts': [
+        {'id': 71, 'project_id': 1, 'number': 'PC-1', 'title': 'Active A GMP', 'status': 'Approved', 'executed': True, 'grand_total': '2500000.0', 'approved_change_orders': '5200.0', 'retainage_percent': '5.0',
+         'vendor': {'id': 20, 'name': 'Big Owner LLC', 'trades': [], 'standard_cost_codes': []}, 'contractor': {'id': 1, 'name': 'Us Construction'}, 'architect': {'id': 30, 'name': 'Ann Architect', 'login': 'ann@example.com'},
+         'contract_date': '2026-02-01', 'issued_on_date': '2026-02-02', 'signed_contract_received_date': '2026-02-10', 'contract_start_date': '2026-03-01', 'contract_estimated_completion_date': '2027-02-28',
+         'actual_completion_date': None, 'contract_termination_date': None, 'updated_at': '2026-05-22T10:00:00Z', 'extra': 'dropped'},
+        {'id': 73, 'project_id': 3, 'number': 'PC-1', 'title': 'Active C', 'status': 'Draft', 'executed': False, 'grand_total': '400000.0', 'vendor': None, 'contractor': None, 'architect': None},
+    ],
+    '/rest/v1.0/budget_views': [
+        {'id': 7, 'project_id': 1, 'name': 'Procore Standard Budget', 'role': None, 'description': '', 'created_at': '2026-01-01T00:00:00Z', 'links': {'detail_rows': 'x', 'summary_rows': 'y'}},
+        {'id': 8, 'project_id': 1, 'name': 'Forecasting', 'role': 'forecasting'},
+    ],
+    '/rest/v1.0/budget_views/7/detail_rows': [
+        {'id': 501, 'deletable': False, 'company_id': 1, 'company': 'Us', 'project_id': 1, 'wbs_code_id': 9, 'biller_id': 1, 'root_cost_code_id': 2, 'cost_code_id': 3, 'cost_code_origin_id': None, 'category_id': 4,
+         'project': 'Active A', 'biller': 'Active A', 'biller_type': 'Project', 'root_cost_code': '03 - Concrete', 'cost_code': '03-3000 - Concrete', 'category': 'Subcontract',
+         'original_budget_amount': '100000.00', 'budget_modifications': '-2000.00', 'budget_forecast': {'id': 1, 'amount': '101500.00', 'automatically_calculated': True}, 'currency_configuration': {'currency_iso_code': 'USD'},
+         'unbudgeted_reason': None, 'Revised Budget': '103500.00', 'Committed Costs': '98000.00', 'Projected Over Under': '-2000.00', 'Notes': 'watch rebar'},
+        {'id': None, 'deletable': False, 'company_id': 1, 'company': 'Us', 'project_id': 1, 'biller': 'Phase 2', 'biller_type': 'SubJob', 'root_cost_code': '09 - Finishes', 'cost_code': '09-6000 - Flooring', 'category': 'Subcontract',
+         'original_budget_amount': '0.00', 'budget_modifications': '0.00', 'budget_forecast': None, 'Revised Budget': '0.00', 'Committed Costs': '30000.00', 'Projected Over Under': '-30000.00', 'unbudgeted_reason': 'Committed cost'},
+    ],
+    '/rest/v1.0/budget_views/8/detail_rows': [],
+    '/rest/v1.0/tasks': [
+        {'id': 601, 'project_id': 1, 'name': 'Active A > Foundations', 'task_name': 'Foundations', 'wbs': '1.1', 'start_datetime': '2026-04-01T04:00:00Z', 'finish_datetime': '2026-05-15T04:00:00Z', 'percentage': 100,
+         'milestone': False, 'critical_path': True, 'schedule_duration': 32, 'actual_start': '2026-04-01T04:00:00Z', 'actual_finish': '2026-05-20T04:00:00Z', 'baseline_start': '2026-04-01T04:00:00Z',
+         'baseline_finish': '2026-05-15T04:00:00Z', 'start_variance': 0, 'finish_variance': 3, 'resource_name': 'Rock Crushers, Dig Co', 'parent_id': 600, 'has_children': False, 'updated_at': '2026-05-20T04:00:00Z', 'extra': 'dropped'},
+        {'id': 602, 'project_id': 1, 'name': 'Active A > Dry In', 'task_name': 'Dry In', 'wbs': '1.2', 'start_datetime': '2026-08-01T04:00:00Z', 'finish_datetime': '2026-08-01T04:00:00Z', 'percentage': 0,
+         'milestone': True, 'critical_path': True, 'schedule_duration': 0, 'parent_id': 600, 'has_children': False},
+        {'id': 603, 'project_id': 1, 'name': 'Active A > Landscaping', 'task_name': 'Landscaping', 'wbs': '1.3', 'start_datetime': '2026-10-01T04:00:00Z', 'finish_datetime': '2026-10-20T04:00:00Z', 'percentage': 0,
+         'milestone': False, 'critical_path': False, 'schedule_duration': 14, 'parent_id': 600, 'has_children': False},
     ],
     '/rest/v1.0/projects/7/rfis': [
         {'id': 11, 'number': '4', 'full_number': 'RFI-004', 'subject': 'Door hardware', 'status': 'open', 'due_date': '2026-10-15',
@@ -178,8 +228,8 @@ def answer(request: httpx.Request) -> httpx.Response:
         q = request.url.params
         if path == '/rest/v1.0/projects' and q.get('filters[by_status]', 'Active') == 'Active':
             body = [p for p in body if p['active']]  # Procore lists active projects unless asked for All
-        if path.endswith('_contracts'):
-            body = [c for c in body if str(c['project_id']) == q.get('project_id')]
+        if body and 'project_id' in body[0] and q.get('project_id'):
+            body = [c for c in body if str(c['project_id']) == q['project_id']]  # Procore lists one project's records at a time
         page, per_page = int(q.get('page', 1)), int(q.get('per_page', 100))
         return httpx.Response(200, json=body[(page - 1) * per_page:page * per_page], headers=limits | {'Total': str(len(body)), 'Per-Page': str(per_page)})
     return httpx.Response(200, json=body, headers=limits)
@@ -244,7 +294,7 @@ def wait_in(message: str) -> int:
 # ------------- TOOL METADATA -------------
 print('-- tools')
 tools = asyncio.run(main.mcp.list_tools())
-check('nine tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_commitments', 'list_company_vendors', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_submittals'])
+check('fourteen tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_budget_rows', 'list_change_events', 'list_change_orders', 'list_commitments', 'list_company_vendors', 'list_prime_contracts', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_schedule_tasks', 'list_submittals'])
 for t in tools:
     a = t.annotations
     one_hint = a is not None and (a.read_only_hint is True) != (a.destructive_hint is True)
@@ -402,6 +452,71 @@ run(commitments.list_commitments([1], kind='subcontract', status='Approved'))
 check('kind limits to one endpoint, status forwarded', {r.url.path for r in requests} == {'/rest/v1.0/work_order_contracts'} and query(requests[0])['filters[status]'] == ['Approved'])
 check('empty project_ids rejected', 'at least one' in error(commitments.list_commitments([])))
 check('too many project_ids rejected, naming the cap', 'at most 25' in error(commitments.list_commitments(list(range(26)))))
+
+
+# ------------- LIST_CHANGE_EVENTS -------------
+print('-- list_change_events')
+result = run(change_events.list_change_events([1, 3, 403], created_at='2026-01-01...2026-12-31'))
+check('GET /rest/v1.1/change_events per project, date range forwarded', {r.url.path for r in requests} == {'/rest/v1.1/change_events'} and sorted(query(r)['project_id'][0] for r in requests if query(r)['page'] == ['1']) == ['1', '3', '403'] and query(requests[0])['filters[created_at]'] == ['2026-01-01...2026-12-31'])
+check('events sorted by project then number, 403 under errors', [(e['project_id'], e['number']) for e in result['items']] == [(1, '001'), (1, '003'), (3, '001')] and result['total'] == 3 and [e['project_id'] for e in result['errors']] == [403])
+row = result['items'][1]
+check('status name and group, type, reason, origin flattened', (row['status'], row['status_group'], row['change_type'], row['change_reason'], row['origin'], row['origin_type'], row['created_by']) == ('Pending', 'open', 'Owner Change', 'Unforeseen Conditions', 'RFI-004', 'rfi', 'Pat Manager'))
+check('line items summed: cost and revenue totals, vendors confirmed or proposed, budget codes', row['line_items'] == 2 and row['cost_total'] == 5500.0 and row['revenue_total'] == 5200.0 and row['vendors'] == ['Rock Crushers', 'Dig Co'] and row['budget_codes'] == ['03-3000 - Concrete', '31-2000 - Earthwork'] and 'extra' not in row)
+check('event with no line items has None totals and empty lists; null nested objects survive', result['items'][0]['cost_total'] is None and result['items'][0]['vendors'] == [] and result['items'][0]['change_type'] is None and result['items'][0]['origin'] is None)
+run(change_events.list_change_events([1]))
+check('no date filters sent unless asked', 'filters[created_at]' not in query(requests[0]) and 'filters[updated_at]' not in query(requests[0]))
+
+
+# ------------- LIST_CHANGE_ORDERS -------------
+print('-- list_change_orders')
+result = run(change_orders.list_change_orders([1, 3]))
+check('GET /rest/v1.0/change_order_packages per project', {r.url.path for r in requests} == {'/rest/v1.0/change_order_packages'} and sorted(query(r)['project_id'][0] for r in requests if query(r)['page'] == ['1']) == ['1', '3'])
+check('packages from both projects, Procore total kept, no errors', [(c['project_id'], c['number']) for c in result['items']] == [(1, '001'), (1, '002'), (3, '001')] and result['total'] == 3 and result['errors'] == [])
+row = result['items'][0]
+check('row trimmed: contract vendor flattened, amount a number, dates kept', row['vendor'] == 'Big Owner LLC' and row['vendor_id'] == 20 and row['contract_id'] == 71 and row['grand_total'] == 5200.0 and row['signed_date'] == '2026-05-22' and row['reviewed_at'] == '2026-05-20T10:00:00Z' and row['executed'] is True and 'extra' not in row)
+check('package with a null contract still returns', result['items'][2]['vendor'] is None and result['items'][2]['vendor_id'] is None)
+result = run(change_orders.list_change_orders([1, 3], status='approved'))
+check('status filter applied after the read, total counts the kept rows', [c['id'] for c in result['items']] == [301, 303] and result['total'] == 2)
+run(change_orders.list_change_orders([1], contract_id=81))
+check('contract_id forwarded', query(requests[0])['contract_id'] == ['81'])
+
+
+# ------------- LIST_PRIME_CONTRACTS -------------
+print('-- list_prime_contracts')
+result = run(prime_contracts.list_prime_contracts([1, 3, 403]))
+check('GET /rest/v1.0/prime_contracts per project, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.0/prime_contracts'} and [e['project_id'] for e in result['errors']] == [403] and result['total'] == 2)
+row = result['items'][0]
+check('parties flattened to names, amounts numbers, dates renamed', (row['owner'], row['owner_id'], row['contractor'], row['architect']) == ('Big Owner LLC', 20, 'Us Construction', 'Ann Architect') and row['grand_total'] == 2500000.0 and row['approved_change_orders'] == 5200.0 and row['retainage_percent'] == 5.0 and row['signed_date'] == '2026-02-10' and row['estimated_completion_date'] == '2027-02-28' and 'extra' not in row)
+check('draft contract with no parties still returns', result['items'][1]['project_id'] == 3 and result['items'][1]['status'] == 'Draft' and result['items'][1]['owner'] is None and result['items'][1]['approved_change_orders'] is None)
+
+
+# ------------- LIST_BUDGET_ROWS -------------
+print('-- list_budget_rows')
+result = run(budget.list_budget_rows(1))
+check("reads the views, then the first view's detail rows with budget_row_type=all", list(dict.fromkeys(r.url.path for r in requests)) == ['/rest/v1.0/budget_views', '/rest/v1.0/budget_views/7/detail_rows'] and query(requests[-1])['project_id'] == ['1'] and query(requests[-1])['budget_row_type'] == ['all'])
+check('view read and the alternatives named', result['view'] == {'id': 7, 'name': 'Procore Standard Budget', 'role': None} and [v['id'] for v in result['views']] == [7, 8] and result['returned'] == 2)
+row = result['items'][0]
+check('fixed fields trimmed, amounts numbers', (row['cost_code'], row['category'], row['sub_job'], row['budgeted']) == ('03-3000 - Concrete', 'Subcontract', None, True) and row['original_budget'] == 100000.0 and row['budget_modifications'] == -2000.0 and row['forecast'] == 101500.0)
+check('view columns passed through by name, numeric where they parse', row['columns'] == {'Revised Budget': 103500.0, 'Committed Costs': 98000.0, 'Projected Over Under': -2000.0, 'Notes': 'watch rebar'})
+check('unbudgeted sub job line flagged', result['items'][1]['budgeted'] is False and result['items'][1]['sub_job'] == 'Phase 2' and result['items'][1]['forecast'] is None and result['items'][1]['columns']['Committed Costs'] == 30000.0)
+run(budget.list_budget_rows(1, view_id=8))
+check('view_id picks another view', requests[-1].url.path == '/rest/v1.0/budget_views/8/detail_rows')
+check('unknown view_id rejected, naming the views', '7 (Procore Standard Budget)' in error(budget.list_budget_rows(1, view_id=99)))
+check('project without budget views rejected', 'no budget views' in error(budget.list_budget_rows(2)))
+
+
+# ------------- LIST_SCHEDULE_TASKS -------------
+print('-- list_schedule_tasks')
+result = run(schedule.list_schedule_tasks(1, search='dry', updated_at='2026-05-01...2026-05-31'))
+q = query(requests[0])
+check('GET /rest/v1.0/tasks with project_id, normal view, query and updated_at forwarded', requests[0].url.path == '/rest/v1.0/tasks' and q['project_id'] == ['1'] and q['view'] == ['normal'] and q['filters[query]'] == ['dry'] and q['filters[updated_at]'] == ['2026-05-01...2026-05-31'])
+check('envelope reports Procore total', (result['total'], result['returned']) == (3, 3))
+row = result['items'][0]
+check('row trimmed and renamed', (row['name'], row['wbs'], row['start'], row['finish'], row['percent_complete'], row['critical'], row['duration_days'], row['finish_variance'], row['resources']) == ('Foundations', '1.1', '2026-04-01T04:00:00Z', '2026-05-15T04:00:00Z', 100, True, 32, 3, 'Rock Crushers, Dig Co') and 'extra' not in row)
+result = run(schedule.list_schedule_tasks(1, milestones_only=True, limit=1))
+check('milestones_only reads the whole schedule before cutting to limit, total counts the kept rows', len(requests) == 2 and [t['name'] for t in result['items']] == ['Dry In'] and result['total'] == 1)
+result = run(schedule.list_schedule_tasks(1, critical_only=True))
+check('critical_only keeps the critical path', [t['name'] for t in result['items']] == ['Foundations', 'Dry In'])
 
 
 # ------------- LIST_RFIS -------------

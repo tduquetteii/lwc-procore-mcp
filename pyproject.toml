@@ -1,6 +1,6 @@
 [project]
 name = "lwc-procore-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Remote MCP server that gives LLM assistants per-user OAuth access to Procore"
 readme = "README.md"
 license = "MIT"

@@ -4,35 +4,22 @@ Commitments: a project's subcontracts (work order contracts) and purchase orders
 Procore keeps the two kinds on separate endpoints with separate status vocabularies, so the
 tool reads both and merges them into one list with a `type` on each row. A commitment is the
 strongest sign that a company is actually working a job: the directory only says it was
-added to the project. The tool takes a batch of project ids because the question it serves,
-who is under contract where across the company, spans every active project, and one call
-per project would be a hundred-plus tool calls for the model. Line items (and so cost codes)
-need one request per contract, so they are not read here; the title names the scope in
-practice ("Flooring", "Electrical").
+added to the project. Line items (and so cost codes) need one request per contract, so they
+are not read here; the title names the scope in practice ("Flooring", "Electrical").
 """
 
 import asyncio
 from typing import Literal
 
-from mcp.server.mcpserver.exceptions import ToolError
-
-from .. import procore, shape
+from .. import batch, procore, shape
 from ..server import READ_ONLY, mcp
 
 Kind = Literal['subcontract', 'purchase_order']
 
-MAX_PROJECTS = 25  # project ids per call; two requests each through the gate, well inside the minute a client allows
-ENDPOINTS    = {'subcontract': '/rest/v1.0/work_order_contracts', 'purchase_order': '/rest/v1.0/purchase_order_contracts'}
-VIEW         = {'view': 'extended'}  # compact is the default; amounts and dates are documented on the full record
+ENDPOINTS = {'subcontract': '/rest/v1.0/work_order_contracts', 'purchase_order': '/rest/v1.0/purchase_order_contracts'}
+VIEW      = {'view': 'extended'}  # compact is the default; amounts and dates are documented on the full record
 SUBCONTRACT_STATUSES    = ('Draft', 'Out For Bid', 'Out For Signature', 'Approved', 'Complete', 'Terminated', 'Void')
 PURCHASE_ORDER_STATUSES = ('Draft', 'Processing', 'Submitted', 'Partially Received', 'Received', 'Approved', 'Closed')
-
-
-def _amount(value) -> float | None:
-    try:
-        return None if value in (None, '') else float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _row(project_id: int, kind: str, c: dict) -> dict:
@@ -47,17 +34,17 @@ def _row(project_id: int, kind: str, c: dict) -> dict:
         'executed': bool(c.get('executed')),
         'vendor': vendor.get('name') or vendor.get('company'),
         'vendor_id': vendor.get('id'),
-        'grand_total': _amount(c.get('grand_total')),
-        'approved_change_orders': _amount(c.get('approved_change_orders')),
-        'pending_change_orders': _amount(c.get('pending_change_orders')),
+        'grand_total': shape.amount(c.get('grand_total')),
+        'approved_change_orders': shape.amount(c.get('approved_change_orders')),
+        'pending_change_orders': shape.amount(c.get('pending_change_orders')),
         'contract_date': c.get('contract_date'),
         'issued_on_date': c.get('issued_on_date'),
         'start_date': c.get('contract_start_date'),
         'estimated_completion_date': c.get('contract_estimated_completion_date') or c.get('estimated_completion_date'),
         'actual_completion_date': c.get('actual_completion_date'),
         'delivery_date': c.get('delivery_date'),
-        'percent_paid': _amount(c.get('percentage_paid')),
-        'remaining_balance': _amount(c.get('remaining_balance_outstanding')),
+        'percent_paid': shape.amount(c.get('percentage_paid')),
+        'remaining_balance': shape.amount(c.get('remaining_balance_outstanding')),
     }
 
 
@@ -67,8 +54,8 @@ async def _project(project_id: int, kinds: list[str], status: str | None, limit:
     if status:
         params['filters[status]'] = status
     results = await asyncio.gather(*(procore.get_all(ENDPOINTS[k], params, limit=limit) for k in kinds))
-    rows = [_row(project_id, k, c) for k, (batch, _) in zip(kinds, results) for c in batch]
-    total = sum(len(batch) if count is None else count for batch, count in results)
+    rows = [_row(project_id, k, c) for k, (found, _) in zip(kinds, results) for c in found]
+    total = sum(len(found) if count is None else count for found, count in results)
 
     return rows[:limit], total
 
@@ -93,24 +80,6 @@ async def list_commitments(project_ids: list[int], kind: Kind | None = None, sta
     A project the user lacks the Commitments tool on is listed under errors; the others still
     return.
     """
-    if not project_ids:
-        raise ToolError('project_ids must name at least one project; use list_projects to find ids')
-    if len(project_ids) > MAX_PROJECTS:
-        raise ToolError(f'project_ids holds {len(project_ids)} ids; call with at most {MAX_PROJECTS} at a time')
     kinds = [kind] if kind else list(ENDPOINTS)
-    results = await asyncio.gather(*(_project(pid, kinds, status, limit) for pid in project_ids), return_exceptions=True)
-    items: list[dict] = []
-    errors: list[dict] = []
-    total = 0
-    for pid, result in zip(project_ids, results):
-        if isinstance(result, ToolError):
-            errors.append({'project_id': pid, 'error': str(result)})
-        elif isinstance(result, BaseException):
-            raise result
-        else:
-            rows, count = result
-            items.extend(rows)
-            total += count
-    items.sort(key=lambda r: (r['vendor'] or '', r['project_id'], r['number'] or ''))
 
-    return shape.listing(items, total) | {'errors': errors}
+    return await batch.per_project(project_ids, lambda pid: _project(pid, kinds, status, limit), sort_key=lambda r: (r['vendor'] or '', r['project_id'], r['number'] or ''))

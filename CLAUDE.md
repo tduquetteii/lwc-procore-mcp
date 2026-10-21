@@ -62,6 +62,11 @@ client --Bearer--> /mcp --> ProcoreTokenVerifier (auth.py) --> @mcp.tool (tools/
   verified identities (auth.py), per-user project lists (tools/projects.py), company submittal
   statuses (tools/submittals.py). Cache keys for user data are keyed by `procore.user()` (the
   Procore user id), not by token, so a refreshed token or a second client shares the entry.
+- `batch.py` is `per_project(project_ids, fetch, sort_key)` for tools that answer a company-wide
+  question: up to `MAX_PROJECTS` (25) ids, one fetch each run concurrently, rows tagged with their
+  `project_id`, a `ToolError` from one project (a 403) listed under `errors` while the rest return.
+  Commitments, prime contracts, change events, and change orders use it; per-project tools with
+  large result sets (budget, schedule) deliberately do not.
 - Stateless transport (`stateless_http=True`) is a deliberate choice so replicas are safe. Do not
   reintroduce per-session state.
 
@@ -81,11 +86,12 @@ One module per Procore resource under `procore_mcp/tools/`, holding every tool f
    (the daily-log dates are the precedent).
 4. Fetch with `procore.get` (one record) or `procore.get_all` (lists; returns `(rows, total)`).
    Never call httpx directly from a tool.
-5. Trim every row with `.get()` and the `shape` helpers (`pick`, `name`, `names`, `text`). Never
+5. Trim every row with `.get()` and the `shape` helpers (`pick`, `name`, `names`, `text`, `amount`). Never
    index a Procore payload with `[]`; fields are routinely null or absent. Everything returned lands
    in the model's context.
 6. List tools return `shape.listing(items, total)` giving `{total, returned, items}`. Default
-   `limit=100`; `procore.MAX_ROWS` caps it at 1000.
+   `limit=100`; `procore.MAX_ROWS` caps it at 1000. A tool answering a company-wide question takes
+   `project_ids` and returns through `batch.per_project` (see Architecture); `limit` is then per project.
 7. Filters go to Procore as `filters[...]` query params. A `status` argument defaults to the open
    state and `None` means every status; use `Literal[...]` for fixed vocabularies.
 8. Reject bad arguments with `ToolError` (`from mcp.server.mcpserver.exceptions import ToolError`),

@@ -27,6 +27,14 @@ def text(value, limit: int = 300) -> str | None:
     return value if len(value) <= limit else value[: limit - 3] + '...'
 
 
+def amount(value) -> float | None:
+    """A money or quantity field as a number; Procore sends them as strings like '23474.0', or null."""
+    try:
+        return None if value in (None, '') else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def listing(items: list, total: int | None) -> dict:
     """The envelope every list tool returns: Procore's count for the query, how many rows are here, and the rows."""
     return {'total': len(items) if total is None else total, 'returned': len(items), 'items': items}

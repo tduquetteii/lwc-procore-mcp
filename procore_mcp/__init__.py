@@ -7,6 +7,8 @@ Procore MCP server, split by concern:
     routes.py    OAuth discovery and proxy routes, /health
     procore.py   HTTP client for Procore's REST API: auth headers, pagination, error surfacing
     shape.py     helpers that trim Procore records to the fields the model needs
+    cache.py     in-memory cache with a lifetime per entry
+    batch.py     one fetch per project for tools that take a batch of project ids
     tools/       one module per Procore resource; each registers its tools on the server
 
 main.py at the repository root imports routes and tools and builds the ASGI app.
