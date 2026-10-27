@@ -39,7 +39,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from procore_mcp import config, procore  # noqa: E402
 from procore_mcp.auth import ProcoreUnavailable  # noqa: E402
 from procore_mcp.server import verifier  # noqa: E402
-from procore_mcp.tools import budget, change_events, change_orders, commitments, daily_log, me, prime_contracts, projects, punch_items, rfis, schedule, submittals, vendors  # noqa: E402
+from procore_mcp.tools import bidding, budget, change_events, change_orders, commitments, daily_log, invoices, me, prime_contracts, projects, punch_items, rfis, schedule, submittals, vendors  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 failed: list[str] = []
@@ -154,6 +154,50 @@ FIXTURES: dict[str, dict | list] = {
          'milestone': True, 'critical_path': True, 'schedule_duration': 0, 'parent_id': 600, 'has_children': False},
         {'id': 603, 'project_id': 1, 'name': 'Active A > Landscaping', 'task_name': 'Landscaping', 'wbs': '1.3', 'start_datetime': '2026-10-01T04:00:00Z', 'finish_datetime': '2026-10-20T04:00:00Z', 'percentage': 0,
          'milestone': False, 'critical_path': False, 'schedule_duration': 14, 'parent_id': 600, 'has_children': False},
+    ],
+    '/rest/v1.1/projects/1/bid_packages': [
+        {'id': 41, 'project_id': 1, 'number': 1, 'title': '09B Flooring', 'bid_due_date': '2026-02-15', 'status': 'closed', 'invited_bids_count': 3, 'bids_will_bid_count': 2, 'submitted_bids_count': 1, 'extra': 'dropped'},
+        {'id': 42, 'project_id': 1, 'number': 2, 'title': '26 Electrical', 'bid_due_date': '2026-03-01', 'submitted_bids_count': 0},
+    ],
+    '/rest/v1.1/projects/2/bid_packages': [],
+    '/rest/v1.1/projects/3/bid_packages': [
+        {'id': 43, 'project_id': 3, 'number': 1, 'title': '08 Glazing', 'bid_due_date': '2026-06-01', 'submitted_bids_count': 2},
+    ],
+    '/rest/v1.1/projects/1/bid_packages/41/bids': [
+        {'id': 411, 'bid_package_id': 41, 'bid_package_title': '09B Flooring', 'bid_status': 'submitted', 'submitted': True, 'awarded': True, 'is_bidder_committed': True, 'lump_sum_amount': 30000.0,
+         'vendor': {'id': 11, 'name': 'Contract Only Flooring', 'avatar_url': None, 'trades': 'Flooring'}, 'invitation_last_sent_at': '2026-01-20T15:00:00Z', 'due_date': '2026-02-15', 'bidder_comments': 'x' * 400,
+         'updated_at': '2026-02-14T15:00:00Z', 'bid_requester': {'company': 'Us'}, 'project': {'name': 'Active A'}, 'extra': 'dropped'},
+        {'id': 412, 'bid_package_id': 41, 'bid_package_title': '09B Flooring', 'bid_status': 'will_not_bid', 'submitted': False, 'awarded': False, 'vendor': {'id': 8, 'name': 'Complete Flooring'}, 'lump_sum_amount': None},
+        {'id': 413, 'bid_package_id': 41, 'bid_package_title': '09B Flooring', 'bid_status': 'undecided', 'submitted': False, 'awarded': False, 'vendor': None},
+    ],
+    '/rest/v1.1/projects/1/bid_packages/42/bids': [
+        {'id': 421, 'bid_package_id': 42, 'bid_package_title': '26 Electrical', 'bid_status': 'will_bid', 'submitted': False, 'awarded': False, 'vendor': {'id': 5, 'name': 'Acme Electric'}},
+    ],
+    '/rest/v1.1/requisitions': [
+        {'id': 701, 'project_id': 1, 'number': 3, 'invoice_number': 'INV-2026-07', 'status': 'approved', 'final': False, 'commitment_id': 81, 'commitment_type': 'WorkOrderContract', 'contract_name': 'Contract SC-001',
+         'vendor_name': 'Glass Co', 'vendor_id': 6, 'billing_date': '2026-07-31', 'requisition_start': '2026-07-01', 'requisition_end': '2026-07-31', 'submitted_at': '2026-08-02T12:00:00Z', 'payment_date': '2026-08-30',
+         'percent_complete': '40.0', 'total_claimed_amount': '20000.0',
+         'summary': {'contract_sum_to_date': '127500.0', 'total_completed_and_stored_to_date': '51000.0', 'total_retainage': '2550.0', 'total_earned_less_retainage': '48450.0', 'less_previous_certificates_for_payment': '28500.0',
+                     'current_payment_due': '19950.0', 'balance_to_finish_including_retainage': '79050.0', 'formatted_period': 'July 2026'}, 'extra': 'dropped'},
+        {'id': 702, 'project_id': 1, 'number': 1, 'invoice_number': 'PO-1', 'status': 'draft', 'commitment_id': 91, 'commitment_type': 'PurchaseOrderContract', 'contract_name': 'PO-001', 'vendor_name': 'Standale Lumber', 'summary': None},
+        {'id': 703, 'project_id': 3, 'number': 1, 'invoice_number': 'A', 'status': 'under_review', 'commitment_id': 84, 'commitment_type': 'WorkOrderContract', 'vendor_name': 'Contract Only Flooring', 'vendor_id': 11},
+    ],
+    '/rest/v1.0/payment_applications': [
+        {'id': 801, 'project_id': 1, 'number': 2, 'invoice_number': 'OI-002', 'status': 'approved', 'formatted_contract_company': 'Big Owner LLC', 'contract': {'id': 71, 'type': 'prime_contract', 'title': 'Active A GMP'},
+         'billing_date': '2026-07-31', 'period_start': '2026-07-01', 'period_end': '2026-07-31', 'percent_complete': '35.0', 'total_amount_accrued_this_period': '210000.0', 'total_amount_paid': '650000.0',
+         'g702': {'contract_sum_to_date': '2505200.0', 'total_completed_and_stored_to_date': '876820.0', 'total_retainage': '43841.0', 'total_earned_less_retainage': '832979.0', 'less_previous_certificates_for_payment': '650000.0',
+                  'current_payment_due': '182979.0', 'balance_to_finish_including_retainage': '1672221.0'}, 'updated_at': '2026-08-05T10:00:00Z', 'extra': 'dropped'},
+        {'id': 802, 'project_id': 1, 'number': 3, 'invoice_number': 'OI-003', 'status': 'draft', 'formatted_contract_company': 'Big Owner LLC', 'contract': {}, 'g702': {}},
+    ],
+    '/rest/v1.0/work_order_contracts/81/line_items': [
+        {'id': 811, 'position': 1, 'description': 'Storefront glazing', 'cost_code': {'id': 3, 'full_code': '08-4000', 'name': 'Entrances and Storefronts', 'code': '4000'}, 'line_item_type': {'id': 2, 'name': 'Subcontract', 'base_type': 'commitment'},
+         'wbs_code': {'id': 9, 'flat_code': '08-4000.S', 'description': 'Entrances and Storefronts - Subcontract'}, 'quantity': '1.0', 'uom': 'ls', 'unit_cost': '100000.0', 'amount': '100000.0', 'extended_amount': '100000.0', 'total_amount': '100000.0',
+         'change_event_line_item': None, 'extra': 'dropped'},
+        {'id': 812, 'position': 2, 'description': 'Rock excavation CE', 'cost_code': {'id': 5, 'full_code': '03-3000', 'name': 'Concrete'}, 'line_item_type': None, 'wbs_code': None, 'quantity': '1.0', 'uom': 'ls', 'unit_cost': '25000.0', 'amount': '25000.0',
+         'change_event_line_item': {'id': 1, 'event_id': 201, 'cost_rom': '4500.0'}},
+    ],
+    '/rest/v1.0/purchase_order_contracts/91/line_items': [
+        {'id': 911, 'position': 1, 'description': '2x6 framing', 'cost_code': {'id': 7, 'full_code': '06-1000', 'name': 'Rough Carpentry'}, 'line_item_type': {'id': 3, 'name': 'Materials'}, 'quantity': '1200.0', 'uom': 'ea', 'unit_cost': '15.0', 'amount': '18000.0'},
     ],
     '/rest/v1.0/projects/7/rfis': [
         {'id': 11, 'number': '4', 'full_number': 'RFI-004', 'subject': 'Door hardware', 'status': 'open', 'due_date': '2026-10-15',
@@ -294,7 +338,7 @@ def wait_in(message: str) -> int:
 # ------------- TOOL METADATA -------------
 print('-- tools')
 tools = asyncio.run(main.mcp.list_tools())
-check('fourteen tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_budget_rows', 'list_change_events', 'list_change_orders', 'list_commitments', 'list_company_vendors', 'list_prime_contracts', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_schedule_tasks', 'list_submittals'])
+check('nineteen tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_bid_packages', 'list_bids', 'list_budget_rows', 'list_change_events', 'list_change_orders', 'list_commitment_line_items', 'list_commitments', 'list_company_vendors', 'list_owner_invoices', 'list_prime_contracts', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_schedule_tasks', 'list_subcontractor_invoices', 'list_submittals'])
 for t in tools:
     a = t.annotations
     one_hint = a is not None and (a.read_only_hint is True) != (a.destructive_hint is True)
@@ -452,6 +496,63 @@ run(commitments.list_commitments([1], kind='subcontract', status='Approved'))
 check('kind limits to one endpoint, status forwarded', {r.url.path for r in requests} == {'/rest/v1.0/work_order_contracts'} and query(requests[0])['filters[status]'] == ['Approved'])
 check('empty project_ids rejected', 'at least one' in error(commitments.list_commitments([])))
 check('too many project_ids rejected, naming the cap', 'at most 25' in error(commitments.list_commitments(list(range(26)))))
+
+print('-- list_commitment_line_items')
+result = run(commitments.list_commitment_line_items(1, [81, 403], kind='subcontract'))
+check('GET /rest/v1.0/work_order_contracts/{id}/line_items with project_id, per commitment', {r.url.path for r in requests} == {'/rest/v1.0/work_order_contracts/81/line_items', '/rest/v1.0/work_order_contracts/403/line_items'} and query(requests[0])['project_id'] == ['1'])
+check('a commitment Procore refuses is listed under errors by commitment_id, the other still returns', [e['commitment_id'] for e in result['errors']] == [403] and 'Procore returned' in result['errors'][0]['error'] and result['total'] == 2)
+row = result['items'][0]
+check('line trimmed: cost code as code - name, type and wbs flattened, amounts numbers', (row['commitment_id'], row['position'], row['cost_code'], row['cost_code_id'], row['line_item_type'], row['wbs_code'], row['uom']) == (81, 1, '08-4000 - Entrances and Storefronts', 3, 'Subcontract', '08-4000.S', 'ls') and row['amount'] == 100000.0 and row['unit_cost'] == 100000.0 and row['change_event_id'] is None and 'extra' not in row)
+check('line from a change event carries its event id; null type and wbs survive', result['items'][1]['change_event_id'] == 201 and result['items'][1]['line_item_type'] is None and result['items'][1]['wbs_code'] is None)
+result = run(commitments.list_commitment_line_items(1, [91], kind='purchase_order'))
+check('purchase_order kind reads the purchase order endpoint', requests[0].url.path == '/rest/v1.0/purchase_order_contracts/91/line_items' and result['items'][0]['cost_code'] == '06-1000 - Rough Carpentry' and result['items'][0]['quantity'] == 1200.0)
+check('empty commitment_ids rejected by name', 'commitment_ids must name at least one' in error(commitments.list_commitment_line_items(1, [], kind='subcontract')))
+
+
+# ------------- LIST_BID_PACKAGES / LIST_BIDS -------------
+print('-- list_bid_packages')
+result = run(bidding.list_bid_packages([1, 3, 403]))
+check('GET /rest/v1.1/projects/{id}/bid_packages with view=all per project, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.1/projects/1/bid_packages', '/rest/v1.1/projects/3/bid_packages', '/rest/v1.1/projects/403/bid_packages'} and all(query(r)['view'] == ['all'] and 'filter' not in query(r) for r in requests) and [e['project_id'] for e in result['errors']] == [403])
+check('packages sorted by project then number, total combined', [(p['project_id'], p['number'], p['title']) for p in result['items']] == [(1, 1, '09B Flooring'), (1, 2, '26 Electrical'), (3, 1, '08 Glazing')] and result['total'] == 3)
+row = result['items'][0]
+check('row trimmed, counts kept when present', row['status'] == 'closed' and row['bid_due_date'] == '2026-02-15' and (row['invited_bids_count'], row['bids_will_bid_count'], row['submitted_bids_count']) == (3, 2, 1) and 'extra' not in row)
+check('counts None when Procore omits them', result['items'][1]['invited_bids_count'] is None and result['items'][1]['submitted_bids_count'] == 0)
+run(bidding.list_bid_packages([1], filter='open'))
+check('filter forwarded', query(requests[0])['filter'] == ['open'])
+
+print('-- list_bids')
+result = run(bidding.list_bids(1))
+check('reads the project\'s packages, then every package\'s bids', [r.url.path for r in requests if query(r)['page'] == ['1']] == ['/rest/v1.1/projects/1/bid_packages', '/rest/v1.1/projects/1/bid_packages/41/bids', '/rest/v1.1/projects/1/bid_packages/42/bids'])
+check('bids from every package, sorted by package then vendor, total combined', [(b['bid_package_id'], b['vendor']) for b in result['items']] == [(41, None), (41, 'Complete Flooring'), (41, 'Contract Only Flooring'), (42, 'Acme Electric')] and result['total'] == 4 and result['errors'] == [])
+row = result['items'][2]
+check('bid trimmed: vendor flattened, flags booleans, amount a number, comments cut', (row['project_id'], row['vendor_id'], row['vendor_trades'], row['bid_status'], row['submitted'], row['awarded'], row['committed']) == (1, 11, 'Flooring', 'submitted', True, True, True) and row['lump_sum_amount'] == 30000.0 and len(row['bidder_comments']) == 300 and 'extra' not in row)
+check('bid with no vendor and no amount still returns', result['items'][0]['vendor_id'] is None and result['items'][0]['bid_status'] == 'undecided' and result['items'][0]['committed'] is False and result['items'][1]['lump_sum_amount'] is None)
+result = run(bidding.list_bids(1, bid_package_id=42))
+check('bid_package_id reads that package only', [r.url.path for r in requests] == ['/rest/v1.1/projects/1/bid_packages/42/bids'] and [b['vendor'] for b in result['items']] == ['Acme Electric'])
+result = run(bidding.list_bids(2))
+check('project with no packages returns an empty listing', result == {'total': 0, 'returned': 0, 'items': [], 'errors': []})
+
+
+# ------------- LIST_SUBCONTRACTOR_INVOICES / LIST_OWNER_INVOICES -------------
+print('-- list_subcontractor_invoices')
+result = run(invoices.list_subcontractor_invoices([1, 3, 403]))
+check('GET /rest/v1.1/requisitions per project, no filters unless asked, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.1/requisitions'} and sorted(query(r)['project_id'][0] for r in requests if query(r)['page'] == ['1']) == ['1', '3', '403'] and 'filters[status]' not in query(requests[0]) and [e['project_id'] for e in result['errors']] == [403])
+check('invoices sorted by vendor then project then number, total combined', [(i['vendor'], i['project_id'], i['number']) for i in result['items']] == [('Contract Only Flooring', 3, 1), ('Glass Co', 1, 3), ('Standale Lumber', 1, 1)] and result['total'] == 3)
+row = result['items'][1]
+check('row trimmed: commitment type mapped, periods renamed, G702 flattened to numbers', (row['commitment_id'], row['commitment_type'], row['contract'], row['vendor_id'], row['period_start'], row['period_end'], row['payment_date']) == (81, 'subcontract', 'Contract SC-001', 6, '2026-07-01', '2026-07-31', '2026-08-30') and row['percent_complete'] == 40.0 and row['total_claimed_amount'] == 20000.0 and row['contract_sum_to_date'] == 127500.0 and row['current_payment_due'] == 19950.0 and row['balance_to_finish_including_retainage'] == 79050.0 and 'formatted_period' not in row and 'extra' not in row)
+check('purchase order invoice typed, null summary gives None amounts', result['items'][2]['commitment_type'] == 'purchase_order' and result['items'][2]['status'] == 'draft' and result['items'][2]['current_payment_due'] is None and result['items'][2]['total_retainage'] is None)
+run(invoices.list_subcontractor_invoices([1], status='approved', commitment_id=81))
+q = query(requests[0])
+check('status and commitment_id forwarded as filters', q['filters[status]'] == ['approved'] and q['filters[commitment_id]'] == ['81'])
+
+print('-- list_owner_invoices')
+result = run(invoices.list_owner_invoices([1, 403]))
+check('GET /rest/v1.0/payment_applications per project, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.0/payment_applications'} and [e['project_id'] for e in result['errors']] == [403] and result['total'] == 2)
+row = result['items'][0]
+check('row trimmed: owner and contract flattened, gross and paid numbers, G702 flattened', (row['number'], row['invoice_number'], row['status'], row['owner'], row['contract_id'], row['contract'], row['period_end']) == (2, 'OI-002', 'approved', 'Big Owner LLC', 71, 'Active A GMP', '2026-07-31') and row['percent_complete'] == 35.0 and row['gross_amount_this_period'] == 210000.0 and row['total_amount_paid'] == 650000.0 and row['contract_sum_to_date'] == 2505200.0 and row['current_payment_due'] == 182979.0 and 'extra' not in row)
+check('draft with empty contract and g702 still returns', result['items'][1]['contract_id'] is None and result['items'][1]['current_payment_due'] is None and result['items'][1]['gross_amount_this_period'] is None)
+result = run(invoices.list_owner_invoices([1], status='approved'))
+check('status applied after the read, total counts the kept rows', [i['id'] for i in result['items']] == [801] and result['total'] == 1 and 'filters[status]' not in query(requests[0]))
 
 
 # ------------- LIST_CHANGE_EVENTS -------------

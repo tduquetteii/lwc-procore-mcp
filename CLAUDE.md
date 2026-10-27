@@ -65,8 +65,11 @@ client --Bearer--> /mcp --> ProcoreTokenVerifier (auth.py) --> @mcp.tool (tools/
 - `batch.py` is `per_project(project_ids, fetch, sort_key)` for tools that answer a company-wide
   question: up to `MAX_PROJECTS` (25) ids, one fetch each run concurrently, rows tagged with their
   `project_id`, a `ToolError` from one project (a 403) listed under `errors` while the rest return.
-  Commitments, prime contracts, change events, and change orders use it; per-project tools with
-  large result sets (budget, schedule) deliberately do not.
+  Commitments, prime contracts, change events, change orders, bid packages, and both invoice tools
+  use it; per-project tools with large result sets (budget, schedule) deliberately do not. The
+  untyped core `each(ids, fetch, label, sort_key)` serves batches of other ids (`commitment_id`
+  in `list_commitment_line_items`, `bid_package_id` in `list_bids`); `per_project` takes a `label`
+  to validate those the same way.
 - Stateless transport (`stateless_http=True`) is a deliberate choice so replicas are safe. Do not
   reintroduce per-session state.
 

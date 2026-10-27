@@ -59,6 +59,11 @@ rotates the refresh token on every use.
 | `list_project_vendors` | `project_id`; optional `search`, `trade`, `limit` | The companies in a project's directory: id, name, trades, cost codes, vendor group, active, prequalified, city and state, phone, email, primary contact. Procore leaves trades, cost codes, and vendor group off this project-level copy; the company directory has them. `trade` keeps companies whose trade or cost code names contain the text. |
 | `list_company_vendors` | optional `search`, `trade`, `limit` | The same fields for the company-wide directory: the whole pool of subcontractors and suppliers, on a project or not. Well over a thousand companies, so filter or raise `limit` deliberately. |
 | `list_commitments` | `project_ids` (up to 25 per call); optional `kind` (`subcontract` or `purchase_order`), `status`, `limit` (per project) | Subcontracts and purchase orders across those projects, merged and sorted by vendor then project: project id, type, number, title, status, executed, vendor and vendor id, totals and change orders, contract and completion dates, percent paid, remaining balance. Who is actually under contract, as opposed to who was added to the directory. Projects the user cannot read are listed under `errors` while the rest return. For a company-wide view the model takes the ids from `list_projects`, calls this in batches, and builds the report itself. |
+| `list_commitment_line_items` | `project_id`, `commitment_ids` (up to 25, one project, one kind), `kind` (`subcontract` or `purchase_order`) | The schedule of values on each commitment: position, description, cost code and id, line item type, WBS code, quantity, unit cost, amount, extended and total amounts, change event id when the line came from one. Where a commitment's scope is itemized. |
+| `list_bid_packages` | `project_ids` (up to 25 per call); optional `filter` (`open`, `closed`, `hidden`), `limit` (per project) | Each scope put out to bid: number, title, status, bid due date, invited, will-bid, and submitted counts when Procore sends them. |
+| `list_bids` | `project_id`; optional `bid_package_id`, `limit` (per package) | Every company invited to a package and where it stands: vendor and id, trades, bid status (`not_invited`, `undecided`, `will_bid`, `will_not_bid`, `submitted`), submitted, awarded, committed, lump sum, invitation and due dates, comments. Without `bid_package_id` the tool reads every package on the project and gathers all their bids. |
+| `list_subcontractor_invoices` | `project_ids` (up to 25 per call); optional `status`, `commitment_id`, `limit` (per project) | Invoices subcontractors and suppliers submitted against commitments (Procore requisitions): number, status, commitment id and type, contract, vendor, billing period, submitted and payment dates, percent complete, claimed amount, and the G702 summary (contract sum to date, completed and stored, retainage, earned less retainage, previous certificates, current payment due, balance to finish). |
+| `list_owner_invoices` | `project_ids` (up to 25 per call); optional `status`, `limit` (per project) | Invoices billed to the owner on the prime contract (Procore payment applications): number, status, owner, contract, billing period, percent complete, gross this period, total paid, and the same G702 summary. The last one on a project is its billed-to-date position. |
 | `list_prime_contracts` | `project_ids` (up to 25 per call); optional `limit` | The owner's contract on each project: number, title, status, executed, owner, contractor, architect, grand total, approved change orders, retainage, contract, start, completion, and termination dates. Most projects have one; the batch is the portfolio. |
 | `list_change_events` | `project_ids` (up to 25 per call); optional `created_at`, `updated_at` (date ranges `YYYY-MM-DD...YYYY-MM-DD`), `limit` (per project) | Potential changes raised before a change order exists: number, title, status and the group it maps to, scope, type, reason, origin (the RFI or record that raised it), line item count, cost and revenue totals across the line items, vendors, budget codes. The pipeline of exposure. |
 | `list_change_orders` | `project_ids` (up to 25 per call); optional `status`, `contract_id`, `limit` (per project) | Change order packages on the prime contract and on commitments: number, title, status, executed, contract id, the contract's vendor, grand total, due, reviewed, signed, invoiced, and paid dates. `contract_id` matches `list_prime_contracts` and `list_commitments` ids. |
@@ -303,7 +308,7 @@ procore_mcp/
   cache.py       in-memory cache with a lifetime per entry: identities, project lists, submittal statuses
   batch.py       one fetch per project for tools that take project_ids, with per-project errors
   tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log, vendors, commitments,
-                 prime_contracts, change_events, change_orders, budget, schedule
+                 prime_contracts, change_events, change_orders, budget, schedule, bidding, invoices
 icon.svg         server icon sent in the MCP handshake, for clients that show one
 smoke.py         offline checks: routes, auth gate, tool metadata, every tool against a fake Procore
 Dockerfile       uv-based image; runs uvicorn on port 8000
@@ -329,8 +334,12 @@ pyproject.toml   dependencies (locked in uv.lock)
 - **401 on every `/mcp` call**: check the server logs for the result of the `/rest/v1.0/me` check;
   a token from a different Procore environment (sandbox vs production) is rejected.
 - **A `project_ids` tool lists a project under `errors` with a 403**: the user lacks that tool
-  (Commitments, Prime Contracts, Change Events, Change Orders) on that project. The other projects in
-  the call still return.
+  (Commitments, Prime Contracts, Change Events, Change Orders, Bidding, Invoicing) on that project.
+  The other projects in the call still return. `list_commitment_line_items` and `list_bids` do the
+  same per commitment and per bid package.
+- **`list_bid_packages` returns `None` for the invited and will-bid counts**: Procore documents those
+  counts as sort keys, not as fields, and sends them on some views only. `submitted_bids_count` is
+  always present; `list_bids` on the project gives the full picture.
 - **`list_budget_rows` says the project has no budget views**: the Budget tool was never set up on
   that project, so there is nothing to read. **`columns` is empty or missing a column**: the view
   shows only the columns configured on it in Procore; pick another with `view_id` from `views`.

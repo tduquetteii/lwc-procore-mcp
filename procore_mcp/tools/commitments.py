@@ -4,8 +4,9 @@ Commitments: a project's subcontracts (work order contracts) and purchase orders
 Procore keeps the two kinds on separate endpoints with separate status vocabularies, so the
 tool reads both and merges them into one list with a `type` on each row. A commitment is the
 strongest sign that a company is actually working a job: the directory only says it was
-added to the project. Line items (and so cost codes) need one request per contract, so they
-are not read here; the title names the scope in practice ("Flooring", "Electrical").
+added to the project. Line items (and so cost codes) need one request per contract, so the
+list does not carry them; list_commitment_line_items reads them for a batch of commitments
+when the title ("Flooring", "Electrical") is not enough.
 """
 
 import asyncio
@@ -48,6 +49,37 @@ def _row(project_id: int, kind: str, c: dict) -> dict:
     }
 
 
+def _cost_code(code: dict | None) -> str | None:
+    code = code or {}
+    return ' - '.join(part for part in (code.get('full_code'), code.get('name')) if part) or None
+
+
+def _line_item(commitment_id: int, li: dict) -> dict:
+    return {
+        'id': li.get('id'),
+        'commitment_id': commitment_id,
+        'position': li.get('position'),
+        'description': shape.text(li.get('description')),
+        'cost_code': _cost_code(li.get('cost_code')),
+        'cost_code_id': (li.get('cost_code') or {}).get('id'),
+        'line_item_type': shape.name(li.get('line_item_type')),
+        'wbs_code': (li.get('wbs_code') or {}).get('flat_code'),
+        'quantity': shape.amount(li.get('quantity')),
+        'uom': li.get('uom'),
+        'unit_cost': shape.amount(li.get('unit_cost')),
+        'amount': shape.amount(li.get('amount')),
+        'extended_amount': shape.amount(li.get('extended_amount')),
+        'total_amount': shape.amount(li.get('total_amount')),
+        'change_event_id': (li.get('change_event_line_item') or {}).get('event_id'),
+    }
+
+
+async def _line_items(project_id: int, kind: str, commitment_id: int) -> tuple[list[dict], int | None]:
+    rows, total = await procore.get_all(f'{ENDPOINTS[kind]}/{commitment_id}/line_items', {'project_id': project_id}, limit=procore.MAX_ROWS)
+
+    return [_line_item(commitment_id, li) for li in rows], total
+
+
 async def _project(project_id: int, kinds: list[str], status: str | None, limit: int) -> tuple[list[dict], int]:
     """One project's commitments of the given kinds, trimmed and merged, with Procore's combined count."""
     params: dict = {'project_id': project_id} | VIEW
@@ -83,3 +115,20 @@ async def list_commitments(project_ids: list[int], kind: Kind | None = None, sta
     kinds = [kind] if kind else list(ENDPOINTS)
 
     return await batch.per_project(project_ids, lambda pid: _project(pid, kinds, status, limit), sort_key=lambda r: (r['vendor'] or '', r['project_id'], r['number'] or ''))
+
+
+@mcp.tool(title='List commitment line items', annotations=READ_ONLY)
+async def list_commitment_line_items(project_id: int, commitment_ids: list[int], kind: Kind) -> dict:
+    """
+    List the schedule of values on one or more commitments of a project: each line's cost
+    code, description, and amount. This is where a commitment's scope is itemized; the
+    commitment itself carries only a title and a total.
+
+    commitment_ids takes up to 25 ids from list_commitments, all of one project and one
+    kind (the item's type there: subcontract or purchase_order). Each item: id,
+    commitment_id, position, description, cost_code, cost_code_id, line_item_type,
+    wbs_code, quantity, uom, unit_cost, amount, extended_amount, total_amount,
+    change_event_id (set when the line came from a change event). A commitment the user
+    cannot read is listed under errors.
+    """
+    return await batch.per_project(commitment_ids, lambda cid: _line_items(project_id, kind, cid), sort_key=lambda r: (r['commitment_id'], r['position'] or 0), label='commitment_id')
