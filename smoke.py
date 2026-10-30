@@ -39,7 +39,7 @@ from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 from procore_mcp import config, procore  # noqa: E402
 from procore_mcp.auth import ProcoreUnavailable  # noqa: E402
 from procore_mcp.server import verifier  # noqa: E402
-from procore_mcp.tools import bidding, budget, change_events, change_orders, commitments, daily_log, invoices, me, prime_contracts, projects, punch_items, rfis, schedule, submittals, vendors  # noqa: E402
+from procore_mcp.tools import bidding, budget, change_events, change_orders, commitments, daily_log, incidents, inspections, invoices, me, prime_contracts, project_users, projects, punch_items, rfis, schedule, submittals, vendors  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 failed: list[str] = []
@@ -199,6 +199,48 @@ FIXTURES: dict[str, dict | list] = {
     '/rest/v1.0/purchase_order_contracts/91/line_items': [
         {'id': 911, 'position': 1, 'description': '2x6 framing', 'cost_code': {'id': 7, 'full_code': '06-1000', 'name': 'Rough Carpentry'}, 'line_item_type': {'id': 3, 'name': 'Materials'}, 'quantity': '1200.0', 'uom': 'ea', 'unit_cost': '15.0', 'amount': '18000.0'},
     ],
+    '/rest/v1.0/checklist/lists': [  # groups by template, each holding its inspections; project_id on the group keeps the fake per project
+        {'name': 'Concrete Pre-Pour', 'template_id': 31, 'project_id': 1, 'response_set': {'conforming_response': 'Yes', 'deficient_response': 'No'}, 'lists': [
+            {'id': 501, 'number': 2, 'name': 'Pre-Pour Footings', 'list_template_id': 31, 'list_template_name': 'Concrete Pre-Pour', 'status': 'In Review', 'description': 'y' * 400, 'due_at': '2026-03-02T17:00:00Z',
+             'inspection_date': '2026-03-01', 'closed_at': None, 'closed_by': None, 'trade': {'id': 2, 'name': 'Concrete', 'active': True}, 'location': {'id': 4, 'name': 'Footings', 'node_name': 'Footings'},
+             'specification_section': {'id': 6, 'section': '03 30 00', 'description': 'Cast-in-Place Concrete'}, 'responsible_contractor': {'id': 12, 'name': 'Ready Mix Co'}, 'responsible_party': {'id': 9, 'login': 'pat@example.com', 'name': 'Pat Manager'},
+             'inspectors': [{'id': 9, 'name': 'Pat Manager'}, {'id': 10, 'name': 'Sam Super'}], 'item_count': 10, 'conforming_item_count': 7, 'deficient_item_count': 2, 'na_item_count': 1, 'neutral_item_count': 0, 'not_inspected_item_count': 0,
+             'created_by': {'id': 9, 'login': 'pat@example.com', 'name': 'Pat Manager'}, 'created_at': '2026-02-20T10:00:00Z', 'updated_at': '2026-03-01T16:00:00Z', 'attachments': [], 'extra': 'dropped'},
+            {'id': 502, 'number': 1, 'name': 'Pre-Pour Slab', 'list_template_id': 31, 'status': 'Closed', 'closed_at': '2026-02-10T12:00:00Z', 'closed_by': {'id': 10, 'name': 'Sam Super'}, 'item_count': 10, 'conforming_item_count': 10, 'deficient_item_count': 0},
+        ]},
+        {'name': 'Safety Walk', 'template_id': 32, 'project_id': 1, 'lists': [
+            {'id': 503, 'number': 3, 'name': 'Weekly Safety Walk', 'list_template_id': 32, 'list_template_name': 'Safety Walk', 'status': 'Open', 'trade': None, 'location': None, 'specification_section': None, 'responsible_contractor': None, 'inspectors': []},
+        ]},
+        {'name': 'Safety Walk', 'template_id': 32, 'project_id': 3, 'lists': [
+            {'id': 504, 'number': 1, 'name': 'Weekly Safety Walk', 'list_template_id': 32, 'list_template_name': 'Safety Walk', 'status': 'Open'},
+        ]},
+    ],
+    '/rest/v1.0/projects/1/incidents': [
+        {'id': 601, 'number': 2, 'title': 'Ladder fall', 'status': 'open', 'event_date': '2026-04-02T14:30:00Z', 'time_unknown': False, 'recordable': True, 'private': False, 'description': 'z' * 400,
+         'location': {'id': 4, 'name': 'Level 2', 'node_name': 'Level 2'}, 'hazard': {'id': 1, 'name': 'Fall', 'active': True}, 'contributing_condition': {'id': 2, 'name': 'Improper ladder setup'}, 'contributing_behavior': {'id': 3, 'name': 'Rushing'},
+         'records_count': 1, 'actions_count': 2, 'witness_statements_count': 1, 'open_observations_count': 1, 'closed_observations_count': 0, 'attachments_count': 3,
+         'created_by': {'id': 9, 'login': 'pat@example.com', 'name': 'Pat Manager'}, 'created_at': '2026-04-02T16:00:00Z', 'updated_at': '2026-04-03T09:00:00Z', 'custom_fields': {}, 'extra': 'dropped'},
+        {'id': 602, 'number': 1, 'title': 'Near miss: dropped tool', 'status': 'closed', 'event_date': '2026-03-15T09:00:00Z', 'recordable': False, 'location': None, 'hazard': None, 'contributing_condition': None, 'contributing_behavior': None, 'records_count': 1},
+    ],
+    '/rest/v1.0/projects/3/incidents': [
+        {'id': 603, 'number': 1, 'title': 'Property damage: fence', 'status': 'open', 'event_date': '2026-05-01T11:00:00Z', 'recordable': False, 'records_count': 1},
+    ],
+    '/rest/v1.0/projects/1/users': [
+        {'id': 9, 'name': 'Pat Manager', 'first_name': 'Pat', 'last_name': 'Manager', 'email_address': 'pat@example.com', 'job_title': 'Project Manager', 'is_employee': True, 'is_active': True, 'business_phone': '555-0100', 'mobile_phone': '555-0101',
+         'vendor': {'id': 1, 'name': 'Us Construction'}, 'permission_template': {'id': 3, 'name': 'Project Admin', 'type': 'global'}, 'last_login_at': '2026-10-20T13:00:00Z', 'address': '1 Main St', 'extra': 'dropped'},
+        {'id': 10, 'name': 'Sam Super', 'first_name': 'Sam', 'last_name': 'Super', 'email_address': 'sam@example.com', 'job_title': 'Superintendent', 'is_employee': True, 'vendor': {'id': 1, 'name': 'Us Construction'}, 'permission_template': None},
+        {'id': 20, 'name': 'Chris Sub', 'first_name': 'Chris', 'last_name': 'Sub', 'initials': 'CS', 'vendor': {'id': 6, 'name': 'Glass Co'}},  # the compact view: no contact fields
+    ],
+    '/rest/v1.0/projects/3/users': [
+        {'id': 9, 'name': 'Pat Manager', 'email_address': 'pat@example.com', 'job_title': 'Project Manager', 'is_employee': True, 'vendor': {'id': 1, 'name': 'Us Construction'}},
+    ],
+    '/rest/v1.0/project_roles': [  # one row per user per role; project_id keeps the fake per project
+        {'id': 1, 'project_id': 1, 'name': 'Pat Manager', 'role': 'Project Manager', 'user_id': 9, 'contact_id': 90, 'is_active': True, 'created_at': '2026-01-01T00:00:00Z', 'extra': 'dropped'},
+        {'id': 2, 'project_id': 1, 'name': 'Pat Manager', 'role': 'Project Executive', 'user_id': 9, 'is_active': True},
+        {'id': 3, 'project_id': 1, 'name': 'Sam Super', 'role': 'Superintendent', 'user_id': 10, 'is_active': True},
+        {'id': 4, 'project_id': 1, 'name': 'Sam Super', 'role': 'Project Manager', 'user_id': 10, 'is_active': False},
+        {'id': 5, 'project_id': 3, 'name': 'Pat Manager', 'role': 'Project Manager', 'user_id': 9, 'is_active': True},
+    ],
     '/rest/v1.0/projects/7/rfis': [
         {'id': 11, 'number': '4', 'full_number': 'RFI-004', 'subject': 'Door hardware', 'status': 'open', 'due_date': '2026-10-15',
          'ball_in_courts': [{'id': 1, 'name': 'Ann Architect - SID'}], 'assignees': [{'id': 1, 'name': 'Ann Architect', 'response_required': True}],
@@ -263,7 +305,7 @@ def answer(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text='maintenance', headers={'Retry-After': '1'})
     if scenario.get('503_far'):
         return httpx.Response(503, text='maintenance', headers={'Retry-After': '120'})
-    if '/projects/403/' in path or request.url.params.get('project_id') == '403':
+    if '/projects/403/' in path or request.url.params.get('project_id') == '403' or scenario.get('deny') == path:
         return httpx.Response(403, json={'errors': 'You do not have access to this tool'})
     body = FIXTURES.get(path)
     if body is None:
@@ -338,7 +380,7 @@ def wait_in(message: str) -> int:
 # ------------- TOOL METADATA -------------
 print('-- tools')
 tools = asyncio.run(main.mcp.list_tools())
-check('nineteen tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_bid_packages', 'list_bids', 'list_budget_rows', 'list_change_events', 'list_change_orders', 'list_commitment_line_items', 'list_commitments', 'list_company_vendors', 'list_owner_invoices', 'list_prime_contracts', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_schedule_tasks', 'list_subcontractor_invoices', 'list_submittals'])
+check('twenty-two tools registered', sorted(t.name for t in tools) == ['get_daily_log', 'get_me', 'list_bid_packages', 'list_bids', 'list_budget_rows', 'list_change_events', 'list_change_orders', 'list_commitment_line_items', 'list_commitments', 'list_company_vendors', 'list_incidents', 'list_inspections', 'list_owner_invoices', 'list_prime_contracts', 'list_project_users', 'list_project_vendors', 'list_projects', 'list_punch_items', 'list_rfis', 'list_schedule_tasks', 'list_subcontractor_invoices', 'list_submittals'])
 for t in tools:
     a = t.annotations
     one_hint = a is not None and (a.read_only_hint is True) != (a.destructive_hint is True)
@@ -553,6 +595,54 @@ check('row trimmed: owner and contract flattened, gross and paid numbers, G702 f
 check('draft with empty contract and g702 still returns', result['items'][1]['contract_id'] is None and result['items'][1]['current_payment_due'] is None and result['items'][1]['gross_amount_this_period'] is None)
 result = run(invoices.list_owner_invoices([1], status='approved'))
 check('status applied after the read, total counts the kept rows', [i['id'] for i in result['items']] == [801] and result['total'] == 1 and 'filters[status]' not in query(requests[0]))
+
+
+# ------------- LIST_INSPECTIONS -------------
+print('-- list_inspections')
+result = run(inspections.list_inspections([1, 3, 403]))
+check('GET /rest/v1.0/checklist/lists with project_id per project, one unpaged GET each, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.0/checklist/lists'} and sorted(query(r)['project_id'][0] for r in requests) == ['1', '3', '403'] and all('page' not in query(r) and 'filters[status]' not in query(r) for r in requests) and [e['project_id'] for e in result['errors']] == [403])
+check('template groups flattened, sorted by project then number, total combined', [(i['project_id'], i['number'], i['name']) for i in result['items']] == [(1, 1, 'Pre-Pour Slab'), (1, 2, 'Pre-Pour Footings'), (1, 3, 'Weekly Safety Walk'), (3, 1, 'Weekly Safety Walk')] and result['total'] == 4)
+row = result['items'][1]
+check('row trimmed: status lower-cased, nested names flattened, spec section joined, inspectors named, counts kept', (row['status'], row['template'], row['template_id'], row['trade'], row['location'], row['spec_section'], row['responsible_contractor'], row['responsible_contractor_id'], row['responsible_party'], row['inspectors'], row['closed_by']) == ('in_review', 'Concrete Pre-Pour', 31, 'Concrete', 'Footings', '03 30 00 Cast-in-Place Concrete', 'Ready Mix Co', 12, 'Pat Manager', ['Pat Manager', 'Sam Super'], None) and (row['item_count'], row['conforming_item_count'], row['deficient_item_count'], row['na_item_count']) == (10, 7, 2, 1) and len(row['description']) == 300 and 'attachments' not in row and 'extra' not in row)
+check('template name falls back to the group, null nested objects give None, closed inspection keeps closed_by', result['items'][0]['template'] == 'Concrete Pre-Pour' and result['items'][0]['status'] == 'closed' and result['items'][0]['closed_by'] == 'Sam Super' and result['items'][2]['trade'] is None and result['items'][2]['inspectors'] == [] and result['items'][2]['spec_section'] is None)
+result = run(inspections.list_inspections([1], status='closed'))
+check('status applied after the read, total counts the kept rows', [i['id'] for i in result['items']] == [502] and result['total'] == 1 and 'filters[status]' not in query(requests[0]))
+result = run(inspections.list_inspections([1], limit=1))
+check('limit cuts the flattened rows, total still counts them', result['returned'] == 1 and result['total'] == 3)
+run(inspections.list_inspections([1], search='pour', responsible_contractor_id=12, updated_at='2026-03-01...2026-03-31'))
+q = query(requests[0])
+check('search, responsible_contractor_id, updated_at forwarded as filters', q['filters[search]'] == ['pour'] and q['filters[responsible_contractor_id]'] == ['12'] and q['filters[updated_at]'] == ['2026-03-01...2026-03-31'])
+
+
+# ------------- LIST_INCIDENTS -------------
+print('-- list_incidents')
+result = run(incidents.list_incidents([1, 3, 403]))
+check('GET /rest/v1.0/projects/{id}/incidents per project, no filters unless asked, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.0/projects/1/incidents', '/rest/v1.0/projects/3/incidents', '/rest/v1.0/projects/403/incidents'} and all('filters[status]' not in query(r) and 'filters[recordable]' not in query(r) for r in requests) and [e['project_id'] for e in result['errors']] == [403])
+check('incidents sorted by project then event date, total combined', [(i['project_id'], i['number']) for i in result['items']] == [(1, 1), (1, 2), (3, 1)] and result['total'] == 3)
+row = result['items'][1]
+check('row trimmed: flags booleans, nested names flattened, counts kept, description cut', (row['title'], row['status'], row['event_date'], row['time_unknown'], row['recordable'], row['private'], row['location'], row['hazard'], row['contributing_condition'], row['contributing_behavior'], row['created_by']) == ('Ladder fall', 'open', '2026-04-02T14:30:00Z', False, True, False, 'Level 2', 'Fall', 'Improper ladder setup', 'Rushing', 'Pat Manager') and (row['records_count'], row['actions_count'], row['witness_statements_count'], row['open_observations_count'], row['attachments_count']) == (1, 2, 1, 1, 3) and len(row['description']) == 300 and 'custom_fields' not in row and 'extra' not in row)
+check('null nested objects give None, absent flags False', result['items'][0]['hazard'] is None and result['items'][0]['location'] is None and result['items'][0]['recordable'] is False and result['items'][0]['private'] is False and result['items'][0]['actions_count'] is None)
+run(incidents.list_incidents([1], status='open', recordable=False, event_date='2026-01-01...2026-06-30', updated_at='2026-04-01...2026-04-30'))
+q = query(requests[0])
+check('status, recordable, event_date, updated_at forwarded as filters', q['filters[status]'] == ['open'] and q['filters[recordable]'] == ['false'] and q['filters[event_date]'] == ['2026-01-01...2026-06-30'] and q['filters[updated_at]'] == ['2026-04-01...2026-04-30'])
+run(incidents.list_incidents([1], recordable=True))
+check('recordable=true forwarded as true', query(requests[0])['filters[recordable]'] == ['true'])
+
+
+# ------------- LIST_PROJECT_USERS -------------
+print('-- list_project_users')
+result = run(project_users.list_project_users([1, 3, 403]))
+check('GET /rest/v1.0/projects/{id}/users and /rest/v1.0/project_roles?project_id= per project, 403 under errors', {r.url.path for r in requests} == {'/rest/v1.0/projects/1/users', '/rest/v1.0/projects/3/users', '/rest/v1.0/projects/403/users', '/rest/v1.0/project_roles'} and sorted(query(r)['project_id'][0] for r in requests if r.url.path == '/rest/v1.0/project_roles' and query(r)['page'] == ['1']) == ['1', '3', '403'] and [e['project_id'] for e in result['errors']] == [403])
+check('users sorted by project then name, total combined', [(u['project_id'], u['name']) for u in result['items']] == [(1, 'Chris Sub'), (1, 'Pat Manager'), (1, 'Sam Super'), (3, 'Pat Manager')] and result['total'] == 4)
+row = result['items'][1]
+check('row trimmed: company and template flattened, active roles attached per user', (row['id'], row['email'], row['job_title'], row['company'], row['company_id'], row['is_employee'], row['permission_template'], row['business_phone'], row['mobile_phone'], row['last_login_at']) == (9, 'pat@example.com', 'Project Manager', 'Us Construction', 1, True, 'Project Admin', '555-0100', '555-0101', '2026-10-20T13:00:00Z') and row['roles'] == ['Project Manager', 'Project Executive'] and 'address' not in row and 'extra' not in row)
+check('inactive role dropped, compact-view user has None contact fields and no roles, roles are per project', result['items'][2]['roles'] == ['Superintendent'] and result['items'][0]['roles'] == [] and result['items'][0]['email'] is None and result['items'][0]['is_employee'] is False and result['items'][3]['roles'] == ['Project Manager'])
+run(project_users.list_project_users([1], search='pat'))
+check('search forwarded to the users read only', {query(r)['filters[search]'][0] for r in requests if r.url.path == '/rest/v1.0/projects/1/users'} == {'pat'} and all('filters[search]' not in query(r) for r in requests if r.url.path == '/rest/v1.0/project_roles'))
+scenario['deny'] = '/rest/v1.0/project_roles'
+result = run(project_users.list_project_users([1]))
+fresh()
+check('roles Procore refuses leave users listed with roles None', result['errors'] == [] and result['returned'] == 3 and all(u['roles'] is None for u in result['items']))
 
 
 # ------------- LIST_CHANGE_EVENTS -------------

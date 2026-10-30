@@ -58,6 +58,7 @@ rotates the refresh token on every use.
 | `list_projects` | `active_only` (default `true`) | `id`, `name`, `project_number`, `active`, `city`, `state_code`, `start_date`, `completion_date`, `stage` for each project the user can see. Use the `id` wherever another tool asks for a `project_id`. |
 | `list_project_vendors` | `project_id`; optional `search`, `trade`, `limit` | The companies in a project's directory: id, name, trades, cost codes, vendor group, active, prequalified, city and state, phone, email, primary contact. Procore leaves trades, cost codes, and vendor group off this project-level copy; the company directory has them. `trade` keeps companies whose trade or cost code names contain the text. |
 | `list_company_vendors` | optional `search`, `trade`, `limit` | The same fields for the company-wide directory: the whole pool of subcontractors and suppliers, on a project or not. Well over a thousand companies, so filter or raise `limit` deliberately. |
+| `list_project_users` | `project_ids` (up to 25 per call); optional `search`, `limit` (per project) | The people on each project's directory with the project roles they hold (Project Manager, Superintendent, ...): name, email, job title, company and company id, is employee, roles, permission template, phones, last login. Who runs which job, and the sub and owner contacts on it. `roles` is `None` on a project whose roles could not be read. |
 | `list_commitments` | `project_ids` (up to 25 per call); optional `kind` (`subcontract` or `purchase_order`), `status`, `limit` (per project) | Subcontracts and purchase orders across those projects, merged and sorted by vendor then project: project id, type, number, title, status, executed, vendor and vendor id, totals and change orders, contract and completion dates, percent paid, remaining balance. Who is actually under contract, as opposed to who was added to the directory. Projects the user cannot read are listed under `errors` while the rest return. For a company-wide view the model takes the ids from `list_projects`, calls this in batches, and builds the report itself. |
 | `list_commitment_line_items` | `project_id`, `commitment_ids` (up to 25, one project, one kind), `kind` (`subcontract` or `purchase_order`) | The schedule of values on each commitment: position, description, cost code and id, line item type, WBS code, quantity, unit cost, amount, extended and total amounts, change event id when the line came from one. Where a commitment's scope is itemized. |
 | `list_bid_packages` | `project_ids` (up to 25 per call); optional `filter` (`open`, `closed`, `hidden`), `limit` (per project) | Each scope put out to bid: number, title, status, bid due date, invited, will-bid, and submitted counts when Procore sends them. |
@@ -72,6 +73,8 @@ rotates the refresh token on every use.
 | `list_rfis` | `project_id`; optional `status` (default `open`), `ball_in_court_id`, `overdue`, `search`, `limit` | Number, subject, status, due date, ball in court, assignees, responsible contractor, RFI manager, cost and schedule impact, priority, link. |
 | `list_submittals` | `project_id`; optional `status` (default `Open`), `ball_in_court_id`, `responsible_contractor_id`, `search`, `current_revision_only`, `limit` | Number, title, revision, status and its group, due dates, ball in court, responsible contractor, submittal manager, spec section, type. `status` is a group (`Open`, `Closed`, `Draft`) or a status name configured for the company. |
 | `list_punch_items` | `project_id`; optional `status` (default `open`), `priority`, `trade_id`, `vendor_id`, `search`, `limit` | Number, name, status, workflow status, priority, due date, location, trade, assignees, ball in court, manager, final approver, type, description. |
+| `list_inspections` | `project_ids` (up to 25 per call); optional `status` (`open`, `in_review`, `closed`), `search`, `responsible_contractor_id`, `updated_at` (date range), `limit` (per project) | Inspections (checklists) run on each project: number, name, template, status, trade, location, spec section, responsible contractor and party, inspectors, due and inspection dates, closed at and by, and the item counts: total, conforming, deficient, n/a, neutral, not inspected. The deficient count is the failures. |
+| `list_incidents` | `project_ids` (up to 25 per call); optional `status` (`open`, `closed`), `recordable`, `event_date`, `updated_at` (date ranges), `limit` (per project) | Safety incidents on each project: number, title, status, event date, OSHA recordable, private, description, location, hazard, contributing condition and behavior, counts of records (injuries, near misses, property damage, environmental), actions, witness statements, observations, attachments. |
 | `get_daily_log` | `project_id`, `start_date`, `end_date` (both required, `YYYY-MM-DD`, at most 31 days) | Manpower by company with workers and man-hours plus totals for the range, notes, and weather. Both dates are required so the model asks which days to pull instead of assuming today. |
 
 List tools return `{"total", "returned", "items"}`: `total` is Procore's count for the filter and
@@ -308,7 +311,8 @@ procore_mcp/
   cache.py       in-memory cache with a lifetime per entry: identities, project lists, submittal statuses
   batch.py       one fetch per project for tools that take project_ids, with per-project errors
   tools/         one module per Procore resource: me, projects, rfis, submittals, punch_items, daily_log, vendors, commitments,
-                 prime_contracts, change_events, change_orders, budget, schedule, bidding, invoices
+                 prime_contracts, change_events, change_orders, budget, schedule, bidding, invoices, inspections, incidents,
+                 project_users
 icon.svg         server icon sent in the MCP handshake, for clients that show one
 smoke.py         offline checks: routes, auth gate, tool metadata, every tool against a fake Procore
 Dockerfile       uv-based image; runs uvicorn on port 8000
@@ -334,12 +338,18 @@ pyproject.toml   dependencies (locked in uv.lock)
 - **401 on every `/mcp` call**: check the server logs for the result of the `/rest/v1.0/me` check;
   a token from a different Procore environment (sandbox vs production) is rejected.
 - **A `project_ids` tool lists a project under `errors` with a 403**: the user lacks that tool
-  (Commitments, Prime Contracts, Change Events, Change Orders, Bidding, Invoicing) on that project.
+  (Commitments, Prime Contracts, Change Events, Change Orders, Bidding, Invoicing, Inspections, Incidents,
+  Directory) on that project.
   The other projects in the call still return. `list_commitment_line_items` and `list_bids` do the
   same per commitment and per bid package.
 - **`list_bid_packages` returns `None` for the invited and will-bid counts**: Procore documents those
   counts as sort keys, not as fields, and sends them on some views only. `submitted_bids_count` is
   always present; `list_bids` on the project gives the full picture.
+- **`list_project_users` returns `roles: None` for a project**: Procore refused the project roles read
+  (a Directory permission separate from seeing the users), so the users are listed without their
+  roles. Every other project in the call is unaffected.
+- **`list_inspections` shows a `status` Procore's UI does not**: Procore sends `Open`, `In Review`,
+  `Closed`; the tool lower-cases them (`open`, `in_review`, `closed`) and filters on that form.
 - **`list_budget_rows` says the project has no budget views**: the Budget tool was never set up on
   that project, so there is nothing to read. **`columns` is empty or missing a column**: the view
   shows only the columns configured on it in Procore; pick another with `view_id` from `views`.
